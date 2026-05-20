@@ -186,6 +186,7 @@ export function parseTaskText(text) {
   }
 
   dueDate = matchedDate;
+  const tags = [];
 
   // Process word by word to identify tokens and other simple parameters
   const tokens = [];
@@ -220,6 +221,14 @@ export function parseTaskText(text) {
       if (matchPrio) {
         priority = matchPrio.id;
         tokens.push({ type: 'priority', text: word, value: matchPrio });
+        continue;
+      } else {
+        // If it starts with # and is not a priority, it is a tag!
+        const tagText = trimmedWord.substring(1);
+        if (tagText && !tags.includes(tagText.toLowerCase())) {
+          tags.push(tagText.toLowerCase());
+        }
+        tokens.push({ type: 'tag', text: word, value: tagText.toLowerCase() });
         continue;
       }
     }
@@ -259,6 +268,8 @@ export function parseTaskText(text) {
     assignee,
     priority,
     dueDate,
+    tags,
     tokens
   };
 }
+

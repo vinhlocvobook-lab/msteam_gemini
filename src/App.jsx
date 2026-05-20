@@ -3,6 +3,7 @@ import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers } f
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
+import TaskEditorModal from './components/TaskEditorModal';
 import { USERS, parseTaskText } from './utils/nlpParser';
 
 const INITIAL_TASKS = [
@@ -60,7 +61,10 @@ export default function App() {
         // Restore dates
         return parsed.map(t => ({
           ...t,
-          dueDate: t.dueDate ? new Date(t.dueDate) : null
+          dueDate: t.dueDate ? new Date(t.dueDate) : null,
+          tags: t.tags || [],
+          comments: t.comments || [],
+          description: t.description || ''
         }));
       } catch (e) {
         console.error(e);
@@ -73,6 +77,8 @@ export default function App() {
     const saved = localStorage.getItem('synapse_logs');
     return saved ? JSON.parse(saved) : INITIAL_LOGS;
   });
+
+  const [selectedTask, setSelectedTask] = useState(null);
 
   const [isSimulating, setIsSimulating] = useState(true);
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'mine'
@@ -111,6 +117,9 @@ export default function App() {
       priority: taskData.priority || 'medium',
       status: 'todo',
       dueDate: taskData.dueDate,
+      tags: taskData.tags || [],
+      description: '',
+      comments: [],
       creator: taskData.creator
     };
 
@@ -141,7 +150,16 @@ export default function App() {
           addLog(activeUser.name, `đã đổi hạn chót của "${t.title}" thành ${dateStr}`, 'update');
         }
 
-        return { ...t, ...updates };
+        const updatedTask = { ...t, ...updates };
+        // Sync selected task in modal
+        setSelectedTask(prevSelected => {
+          if (prevSelected && prevSelected.id === taskId) {
+            return updatedTask;
+          }
+          return prevSelected;
+        });
+
+        return updatedTask;
       }
       return t;
     }));
@@ -428,6 +446,7 @@ export default function App() {
             tasks={filteredTasks} 
             onUpdateTask={handleUpdateTask} 
             onDeleteTask={handleDeleteTask}
+            onOpenTaskEditor={setSelectedTask}
           />
         </section>
 
@@ -441,6 +460,16 @@ export default function App() {
           />
         </aside>
       </main>
+
+      {/* Task Details Editor Modal */}
+      {selectedTask && (
+        <TaskEditorModal 
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onSave={handleUpdateTask}
+          activeUser={activeUser}
+        />
+      )}
 
       {/* Footer */}
       <footer style={{ textAlign: 'center', padding: '24px 0 10px 0', fontSize: '11px', color: 'var(--text-muted)', borderTop: 'var(--glass-border)', marginTop: '20px' }}>

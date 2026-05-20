@@ -123,6 +123,7 @@ export default function SmartInput({ onAddTask, activeUser }) {
           assignee: finalParsed.assignee || activeUser, // Default to current active user if none parsed
           priority: finalParsed.priority,
           dueDate: finalParsed.dueDate,
+          tags: finalParsed.tags || [],
           creator: activeUser
         });
 
@@ -146,6 +147,9 @@ export default function SmartInput({ onAddTask, activeUser }) {
       }
       if (token.type === 'priority') {
         return `<span class="token-priority-${token.value.id}">${token.text}</span>`;
+      }
+      if (token.type === 'tag') {
+        return `<span class="token-tag">${token.text}</span>`;
       }
       if (token.type === 'date') {
         return `<span class="token-date">${token.text}</span>`;
@@ -256,6 +260,13 @@ export default function SmartInput({ onAddTask, activeUser }) {
                 <span>{formatPreviewDate(parsed.dueDate)}</span>
               </div>
             )}
+
+            {/* Tags Preview */}
+            {parsed.tags && parsed.tags.map(tag => (
+              <div key={tag} className="preview-meta-badge tag-preview-badge">
+                <span>#{tag}</span>
+              </div>
+            ))}
             
             {/* Enter Prompt */}
             <div className="preview-enter-tip">

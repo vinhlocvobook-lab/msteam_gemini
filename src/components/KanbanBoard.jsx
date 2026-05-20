@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Trash2, ShieldAlert, User, Check, Clock } from 'lucide-react';
+import { Calendar, Trash2, ShieldAlert, User, Check, Clock, Edit2 } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 
 const COLUMNS = [
@@ -9,7 +9,7 @@ const COLUMNS = [
   { id: 'done', title: 'Hoàn thành', color: '#10b981' }
 ];
 
-export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask }) {
+export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenTaskEditor }) {
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [dragOverColumnId, setDragOverColumnId] = useState(null);
   const [activePopup, setActivePopup] = useState(null); // { taskId, type: 'assignee' | 'priority' }
@@ -163,6 +163,7 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask }) {
                       draggable
                       onDragStart={(e) => handleDragStart(e, task.id)}
                       onDragEnd={() => handleDragEnd(task.id)}
+                      onDoubleClick={() => onOpenTaskEditor(task)}
                     >
                       {/* Card Header Row */}
                       <div className="card-header-row">
@@ -172,21 +173,44 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask }) {
                           suppressContentEditableWarning
                           onBlur={(e) => handleTitleBlur(task.id, e)}
                           onKeyDown={handleTitleKeyDown}
+                          onClick={(e) => e.stopPropagation()} // Stop opening editor when clicking editable title
                         >
                           {task.title}
                         </div>
                         
-                        <button
-                          className="card-delete-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteTask(task.id);
-                          }}
-                          title="Xóa công việc"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <button
+                            className="card-edit-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenTaskEditor(task);
+                            }}
+                            title="Chỉnh sửa chi tiết"
+                          >
+                            <Edit2 size={11} />
+                          </button>
+
+                          <button
+                            className="card-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteTask(task.id);
+                            }}
+                            title="Xóa công việc"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Card Tags Row */}
+                      {task.tags && task.tags.length > 0 && (
+                        <div className="card-tags">
+                          {task.tags.map(tag => (
+                            <span key={tag} className="card-tag">#{tag}</span>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Card Badges Row */}
                       <div className="card-badges">
