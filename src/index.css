@@ -532,6 +532,10 @@ body {
   align-items: start;
 }
 
+.dashboard-grid > section {
+  min-width: 0; /* Prevents grid item from expanding beyond viewport and allows child board to scroll */
+}
+
 @media (max-width: 1024px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -540,13 +544,17 @@ body {
 
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(250px, 1fr)); /* Prevents card squishing, columns keep reasonable width */
   gap: 16px;
+  overflow-x: auto; /* Enable horizontal scrolling when columns overflow */
+  padding-bottom: 12px; /* Space for the custom scrollbar */
 }
 
 @media (max-width: 768px) {
   .kanban-board {
     grid-template-columns: 1fr;
+    overflow-x: visible;
+    padding-bottom: 0;
   }
 }
 
