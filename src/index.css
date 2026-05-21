@@ -526,19 +526,55 @@ body {
 
 /* Kanban & Dashboard Layout */
 .dashboard-grid {
-  display: grid;
-  grid-template-columns: 1fr 320px;
+  display: flex;
   gap: 24px;
   align-items: start;
+  width: 100%;
+  transition: gap 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dashboard-grid.sidebar-hidden {
+  gap: 0px;
 }
 
 .dashboard-grid > section {
-  min-width: 0; /* Prevents grid item from expanding beyond viewport and allows child board to scroll */
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-container {
+  width: 320px;
+  flex-shrink: 0;
+  opacity: 1;
+  transform: translateX(0);
+  overflow: hidden; /* Ensures contents don't distort layout during transitions */
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-container.closed {
+  width: 0px;
+  opacity: 0;
+  transform: translateX(40px);
+  pointer-events: none;
 }
 
 @media (max-width: 1024px) {
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    gap: 24px;
+  }
+  
+  .sidebar-container {
+    width: 100% !important;
+    transform: none !important;
+    opacity: 1 !important;
+    overflow: visible;
+  }
+  
+  .sidebar-container.closed {
+    display: none;
   }
 }
 

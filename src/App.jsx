@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
@@ -100,6 +100,12 @@ export default function App() {
     return localStorage.getItem('synapse_smart_input_collapsed') === 'true';
   });
 
+  // Persisted Right Sidebar visibility state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('synapse_sidebar_open');
+    return saved !== 'false'; // defaults to true
+  });
+
   // Persist Data
   useEffect(() => {
     localStorage.setItem('synapse_tasks', JSON.stringify(tasks));
@@ -112,6 +118,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('synapse_smart_input_collapsed', isSmartInputCollapsed);
   }, [isSmartInputCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_sidebar_open', isSidebarOpen);
+  }, [isSidebarOpen]);
 
   // Log action helper
   const addLog = (userName, action, type = 'info') => {
@@ -382,6 +392,29 @@ export default function App() {
             </div>
           </div>
 
+          {/* Sidebar Expand/Collapse Toggle Button */}
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="user-switcher-wrap"
+            style={{
+              padding: '8px 12px',
+              cursor: 'pointer',
+              color: isSidebarOpen ? '#c084fc' : '#a1a1aa',
+              borderColor: isSidebarOpen ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)',
+              background: isSidebarOpen ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease'
+            }}
+            title={isSidebarOpen ? "Ẩn thanh bên" : "Hiện thanh bên"}
+          >
+            {isSidebarOpen ? <PanelRightClose size={13} /> : <PanelRightOpen size={13} />}
+            <span style={{ fontSize: '11px', fontWeight: '500' }}>
+              {isSidebarOpen ? "Ẩn Sidebar" : "Hiện Sidebar"}
+            </span>
+          </button>
+
           {/* Reset Board */}
           <button 
             onClick={handleResetBoard}
@@ -478,7 +511,7 @@ export default function App() {
       </div>
 
       {/* Main Kanban & Sidebar Grid */}
-      <main className="dashboard-grid">
+      <main className={`dashboard-grid ${isSidebarOpen ? 'sidebar-visible' : 'sidebar-hidden'}`}>
         {/* Board Canvas */}
         <section>
           <KanbanBoard 
@@ -489,8 +522,8 @@ export default function App() {
           />
         </section>
 
-        {/* Team Collaboration Sidebar */}
-        <aside>
+        {/* Team Collaboration Sidebar Container */}
+        <aside className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
           <Sidebar 
             tasks={tasks} 
             logs={logs} 
