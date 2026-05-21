@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
@@ -95,6 +95,11 @@ export default function App() {
   
   const simulationIntervalRef = useRef(null);
 
+  // Persisted collapse state for AI Smart Input
+  const [isSmartInputCollapsed, setIsSmartInputCollapsed] = useState(() => {
+    return localStorage.getItem('synapse_smart_input_collapsed') === 'true';
+  });
+
   // Persist Data
   useEffect(() => {
     localStorage.setItem('synapse_tasks', JSON.stringify(tasks));
@@ -103,6 +108,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('synapse_logs', JSON.stringify(logs));
   }, [logs]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_smart_input_collapsed', isSmartInputCollapsed);
+  }, [isSmartInputCollapsed]);
 
   // Log action helper
   const addLog = (userName, action, type = 'info') => {
@@ -387,18 +396,34 @@ export default function App() {
       </header>
 
       {/* Interactive NLP Smart Input Area */}
-      <section className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <section className="glass-panel" style={{ padding: isSmartInputCollapsed ? '14px 24px' : '24px', display: 'flex', flexDirection: 'column', gap: isSmartInputCollapsed ? '0px' : '14px', transition: 'all 0.3s ease' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Sparkles size={16} style={{ color: '#c084fc' }} />
             <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '17px', fontWeight: '600' }}>Tạo công việc siêu tốc bằng Trí Tuệ Nhân Tạo</h2>
           </div>
-          <span style={{ fontSize: '12px', color: '#71717a' }}>
-            💡 Gõ <span style={{ color: '#c084fc', fontWeight: 'bold' }}>@tên</span> để gán người, <span style={{ color: '#ef4444', fontWeight: 'bold' }}>#cao/#trungbinh/#thap</span> để đặt ưu tiên, <span style={{ color: '#06b6d4', fontWeight: 'bold' }}>ngày mai/thứ sáu</span> để đặt hạn.
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {!isSmartInputCollapsed && (
+              <span className="smart-input-tip" style={{ fontSize: '12px', color: '#71717a' }}>
+                💡 Gõ <span style={{ color: '#c084fc', fontWeight: 'bold' }}>@tên</span> để gán người, <span style={{ color: '#ef4444', fontWeight: 'bold' }}>#cao/#trungbinh/#thap</span> để đặt ưu tiên, <span style={{ color: '#06b6d4', fontWeight: 'bold' }}>ngày mai/thứ sáu</span> để đặt hạn.
+              </span>
+            )}
+            <button
+              onClick={() => setIsSmartInputCollapsed(!isSmartInputCollapsed)}
+              className="column-toggle-btn"
+              style={{ padding: '4px', borderRadius: '6px' }}
+              title={isSmartInputCollapsed ? 'Mở rộng bảng nhập' : 'Thu nhỏ bảng nhập'}
+            >
+              {isSmartInputCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+            </button>
+          </div>
         </div>
 
-        <SmartInput onAddTask={handleAddTask} activeUser={activeUser} />
+        {!isSmartInputCollapsed && (
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <SmartInput onAddTask={handleAddTask} activeUser={activeUser} />
+          </div>
+        )}
       </section>
 
       {/* Dashboard Filter and Board Title */}
