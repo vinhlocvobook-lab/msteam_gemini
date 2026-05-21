@@ -298,6 +298,13 @@ body {
   white-space: pre-wrap;
   word-wrap: break-word;
   box-sizing: border-box;
+
+  /* Guarantee identical text rendering metrics */
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-align: start;
+  text-transform: none;
+  font-weight: 400; /* Force uniform weight to prevent any weight mismatch */
 }
 
 .textarea-highlighter {
@@ -324,53 +331,47 @@ body {
 
 /* Highlighting tokens */
 .token-assignee {
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: var(--success);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  background: rgba(16, 185, 129, 0.1);
+  border-bottom: 2px solid rgba(16, 185, 129, 0.6);
+  color: #34d399; /* brighter green for premium contrast */
+  padding: 2px 0;
+  border-radius: 2px;
 }
 
 .token-priority-high {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: var(--danger);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 2px solid rgba(239, 68, 68, 0.6);
+  color: #f87171; /* brighter red */
+  padding: 2px 0;
+  border-radius: 2px;
 }
 
 .token-priority-medium {
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: var(--warning);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom: 2px solid rgba(245, 158, 11, 0.6);
+  color: #fbbf24; /* brighter yellow */
+  padding: 2px 0;
+  border-radius: 2px;
 }
 
 .token-priority-low {
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: var(--success);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  background: rgba(16, 185, 129, 0.1);
+  border-bottom: 2px solid rgba(16, 185, 129, 0.6);
+  color: #34d399;
+  padding: 2px 0;
+  border-radius: 2px;
 }
 
 .token-date {
-  background: rgba(6, 182, 212, 0.15);
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  color: var(--info);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  background: rgba(6, 182, 212, 0.1);
+  border-bottom: 2px solid rgba(6, 182, 212, 0.6);
+  color: #22d3ee; /* brighter cyan */
+  padding: 2px 0;
+  border-radius: 2px;
 }
 
 .token-command {
-  color: #a78bfa;
-  font-weight: 600;
+  color: #c084fc; /* brighter purple */
 }
 
 .input-icon {
@@ -987,12 +988,11 @@ body {
 
 /* Token for Hashtag Tag */
 .token-tag {
-  background: rgba(139, 92, 246, 0.12);
-  border: 1px solid rgba(139, 92, 246, 0.25);
+  background: rgba(139, 92, 246, 0.1);
+  border-bottom: 2px solid rgba(139, 92, 246, 0.6);
   color: #c084fc;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  padding: 2px 0;
+  border-radius: 2px;
 }
 
 /* Smart Input Tag Preview Badge */
