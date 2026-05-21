@@ -58,14 +58,23 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Restore dates
-        return parsed.map(t => ({
-          ...t,
-          dueDate: t.dueDate ? new Date(t.dueDate) : null,
-          tags: t.tags || [],
-          comments: t.comments || [],
-          description: t.description || ''
-        }));
+        // Restore dates and ensure all task IDs are unique to prevent key collision bugs
+        const seenIds = new Set();
+        return parsed.map(t => {
+          let uniqueId = t.id;
+          if (!uniqueId || seenIds.has(uniqueId)) {
+            uniqueId = `${uniqueId || 'task'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          }
+          seenIds.add(uniqueId);
+          return {
+            ...t,
+            id: uniqueId,
+            dueDate: t.dueDate ? new Date(t.dueDate) : null,
+            tags: t.tags || [],
+            comments: t.comments || [],
+            description: t.description || ''
+          };
+        });
       } catch (e) {
         console.error(e);
       }
@@ -111,7 +120,7 @@ export default function App() {
   // Task operation functions
   const handleAddTask = (taskData) => {
     const newTask = {
-      id: `task-${Date.now()}`,
+      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: taskData.title,
       assignee: taskData.assignee,
       priority: taskData.priority || 'medium',
@@ -195,6 +204,8 @@ export default function App() {
   // MULTI-USER REAL-TIME SIMULATION ENGINE
   // ============================================
   useEffect(() => {
+    let timeoutId = null;
+
     if (!isSimulating) {
       if (simulationIntervalRef.current) {
         clearInterval(simulationIntervalRef.current);
@@ -216,7 +227,7 @@ export default function App() {
       setTeamMembers(prev => prev.map(m => m.id === simUser.id ? { ...m, status: 'typing' } : m));
 
       // 2. Perform action after 3 seconds of typing
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         // Check if simulation is still active
         setIsSimulating(current => {
           if (!current) {
@@ -260,7 +271,7 @@ export default function App() {
               const parsedSim = parseTaskText(rawText);
 
               const newSimTask = {
-                id: `task-sim-${Date.now()}`,
+                id: `task-sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 title: parsedSim.cleanText,
                 assignee: parsedSim.assignee || simUser,
                 priority: parsedSim.priority,
@@ -297,6 +308,9 @@ export default function App() {
     return () => {
       if (simulationIntervalRef.current) {
         clearInterval(simulationIntervalRef.current);
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
     };
 

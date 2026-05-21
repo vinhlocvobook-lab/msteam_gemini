@@ -47,7 +47,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser }) {
     if (!commentInput.trim()) return;
 
     const newComment = {
-      id: `comment-${Date.now()}`,
+      id: `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       author: activeUser,
       text: commentInput.trim(),
       time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
