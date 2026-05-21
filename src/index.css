@@ -866,6 +866,17 @@ body {
   flex-direction: column;
   gap: 4px;
   width: 180px;
+  opacity: 0.8; /* Semi-transparent when mouse is outside the menu */
+  transition: opacity 0.2s ease;
+}
+
+.inline-overlay:hover {
+  opacity: 1 !important; /* Fully opaque when mouse is inside the menu */
+}
+
+/* Ensure the parent badge remains fully opaque while popup is open so child opacity is clean */
+.card-badge:has(.inline-overlay) {
+  opacity: 1 !important;
 }
 
 .inline-overlay-item {
