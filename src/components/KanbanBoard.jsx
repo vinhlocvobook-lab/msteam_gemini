@@ -159,7 +159,7 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                     <div
                       key={task.id}
                       id={`card-${task.id}`}
-                      className="task-card fade-in"
+                      className={`task-card fade-in ${activePopup && activePopup.taskId === task.id ? 'active-popup' : ''}`}
                       draggable
                       onDragStart={(e) => handleDragStart(e, task.id)}
                       onDragEnd={() => handleDragEnd(task.id)}

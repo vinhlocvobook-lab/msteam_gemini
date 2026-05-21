@@ -253,7 +253,7 @@ export function parseTaskText(text) {
   }
 
   // Reconstruct clean title by joining text words, removing leading/trailing punctuation/spaces
-  let cleanText = cleanWords.join('').replace(/\s+/g, ' ').trim();
+  let cleanText = cleanWords.join(' ').replace(/\s+/g, ' ').trim();
   
   // Strip trailing punctuation
   cleanText = cleanText.replace(/[,;.:!#@\-\s]+$/, '').trim();
