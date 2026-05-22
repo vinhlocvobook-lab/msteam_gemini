@@ -510,15 +510,15 @@ router.get('/ms-teams', authenticateAppToken, async (req, res) => {
     try {
       accessToken = await getValidMicrosoftToken(req.user.id);
     } catch (err) {
-      console.log(`[PICKER] No Microsoft token found for user \${req.user.id}. Returning mock teams.`);
+      console.log(`[PICKER] No Microsoft token found for user ${req.user.id}. Returning mock teams.`);
       return res.json([
         { id: 'mock-team-1', displayName: 'Synapse Project Team' },
         { id: 'mock-team-2', displayName: 'Ban Giám Đốc Synapse' }
       ]);
     }
 
-    const response = await axios.get(`\${MICROSOFT_GRAPH_BASE_URL}/me/joinedTeams`, {
-      headers: { Authorization: `Bearer \${accessToken}` }
+    const response = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/me/joinedTeams`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const teams = response.data?.value || [];
@@ -548,15 +548,15 @@ router.get('/ms-teams/:teamId/channels', authenticateAppToken, async (req, res) 
     }
 
     const accessToken = await getValidMicrosoftToken(req.user.id);
-    const response = await axios.get(`\${MICROSOFT_GRAPH_BASE_URL}/teams/\${teamId}/channels`, {
-      headers: { Authorization: `Bearer \${accessToken}` }
+    const response = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/teams/${teamId}/channels`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const channels = response.data?.value || [];
     res.json(channels.map(c => ({
       id: c.id,
       displayName: c.displayName,
-      webUrl: c.webUrl || `https://teams.microsoft.com/l/channel/\${c.id}`
+      webUrl: c.webUrl || `https://teams.microsoft.com/l/channel/${c.id}`
     })));
   } catch (err) {
     console.error('[PICKER ERROR] Failed to fetch channels:', err.message);
@@ -570,7 +570,7 @@ router.get('/ms-chats', authenticateAppToken, async (req, res) => {
     try {
       accessToken = await getValidMicrosoftToken(req.user.id);
     } catch (err) {
-      console.log(`[PICKER] No Microsoft token found for user \${req.user.id}. Returning mock chats.`);
+      console.log(`[PICKER] No Microsoft token found for user ${req.user.id}. Returning mock chats.`);
       return res.json([
         { id: 'mock-chat-1', topic: 'Thảo luận PO & UI/UX (Lộc & Lan)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-1' },
         { id: 'mock-chat-2', topic: 'Nhóm Dev Frontend & Backend (Huy & Bình)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-2' },
@@ -578,16 +578,16 @@ router.get('/ms-chats', authenticateAppToken, async (req, res) => {
       ]);
     }
 
-    const response = await axios.get(`\${MICROSOFT_GRAPH_BASE_URL}/me/chats?\$top=50`, {
-      headers: { Authorization: `Bearer \${accessToken}` }
+    const response = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/me/chats?$top=50`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const chats = response.data?.value || [];
     res.json(chats.map(c => ({
       id: c.id,
-      topic: c.topic || `Cuộc hội thoại (\${c.chatType})`,
+      topic: c.topic || `Cuộc hội thoại (${c.chatType})`,
       chatType: c.chatType,
-      webUrl: c.webUrl || `https://teams.microsoft.com/l/chat/\${c.id}`
+      webUrl: c.webUrl || `https://teams.microsoft.com/l/chat/${c.id}`
     })));
   } catch (err) {
     console.error('[PICKER ERROR] Failed to fetch MS Chats:', err.message);
