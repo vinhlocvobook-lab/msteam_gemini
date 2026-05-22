@@ -178,7 +178,7 @@ router.post('/', authenticateAppToken, async (req, res) => {
     // 1. Insert base task
     await pool.query(
       `INSERT INTO tasks (id, title, description, status, priority, due_date, creator_id, 
-                          teams_link, channel_link, chat_link, teams_id, channel_id, chatId) 
+                          teams_link, channel_link, chat_link, teams_id, channel_id, chat_id) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [taskId, title, description, status, priority, parsedDueDate, resolvedCreator,
        teamsLink, channelLink, chatLink, teamsId, channelId, chatId]
