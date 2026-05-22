@@ -660,24 +660,73 @@ router.get('/sync/ms-chats', authenticateAppToken, async (req, res) => {
       return res.json([
         { id: 'mock-chat-1', topic: 'Thảo luận PO & UI/UX (Lộc & Lan)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-1' },
         { id: 'mock-chat-2', topic: 'Nhóm Dev Frontend & Backend (Huy & Bình)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-2' },
-        { id: 'mock-chat-3', topic: 'Kênh Chat Kỹ Thuật Synapse', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-3' }
+        { id: 'mock-chat-3', topic: 'Kênh Chat Kỹ Thuật Synapse', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-3' },
+        { id: 'mock-chat-4', topic: 'Trò chuyện với Nguyễn Mai Lan (UX Designer)', chatType: 'oneOnOne', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-4' },
+        { id: 'mock-chat-5', topic: 'Trò chuyện với Trần Thế Huy (Lead Developer)', chatType: 'oneOnOne', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-5' }
       ]);
     }
 
-    const url = `${MICROSOFT_GRAPH_BASE_URL}/me/chats?$top=50`;
-    console.log(`[DEBUG PICKER] Fetching MS Chats from URL: ${url}`);
+    // 1. Get current user profile to find their Microsoft ID & displayName for exclusions
+    let myMsId = '';
+    let myMsName = '';
+    try {
+      const meRes = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/me`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      myMsId = meRes.data.id;
+      myMsName = meRes.data.displayName;
+      console.log(`[DEBUG PICKER] Current Microsoft user: ${myMsName} (${myMsId})`);
+    } catch (meErr) {
+      console.warn(`[DEBUG PICKER WARNING] Failed to fetch current Microsoft user profile: ${meErr.message}`);
+    }
+
+    // 2. Fetch chats list with members expanded
+    const url = `${MICROSOFT_GRAPH_BASE_URL}/me/chats?$expand=members&$top=50`;
+    console.log(`[DEBUG PICKER] Fetching MS Chats with expanded members from URL: ${url}`);
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const chats = response.data?.value || [];
     console.log(`[DEBUG PICKER] Successfully fetched ${chats.length} chats from MS Graph`);
-    res.json(chats.map(c => ({
-      id: c.id,
-      topic: c.topic || `Cuộc hội thoại (${c.chatType})`,
-      chatType: c.chatType,
-      webUrl: c.webUrl || `https://teams.microsoft.com/l/chat/${c.id}`
-    })));
+    
+    // 3. Resolve topics dynamically for oneOnOne and unnamed chats
+    const resolvedChats = chats.map(c => {
+      let resolvedTopic = c.topic;
+      
+      if (!resolvedTopic) {
+        if (c.chatType === 'oneOnOne') {
+          // 1:1 Chats: Exclude the current user to find the partner's name
+          const otherMembers = c.members?.filter(m => m.userId !== myMsId && m.displayName !== myMsName) || [];
+          if (otherMembers.length > 0) {
+            resolvedTopic = `Trò chuyện với ${otherMembers.map(m => m.displayName).join(', ')}`;
+          } else if (c.members && c.members.length > 0) {
+            // If only current user is in the chat (Self Chat)
+            const selfMember = c.members.find(m => m.userId === myMsId);
+            resolvedTopic = selfMember ? `Ghi chú cá nhân (${selfMember.displayName})` : 'Trò chuyện cá nhân';
+          } else {
+            resolvedTopic = 'Cuộc trò chuyện (1:1)';
+          }
+        } else {
+          // Unnamed Group Chats: Construct topic from first few members' names
+          const otherMembers = c.members?.filter(m => m.userId !== myMsId) || [];
+          if (otherMembers.length > 0) {
+            resolvedTopic = `Nhóm: ${otherMembers.map(m => m.displayName).slice(0, 3).join(', ')}${otherMembers.length > 3 ? '...' : ''}`;
+          } else {
+            resolvedTopic = 'Cuộc hội thoại nhóm';
+          }
+        }
+      }
+
+      return {
+        id: c.id,
+        topic: resolvedTopic,
+        chatType: c.chatType,
+        webUrl: c.webUrl || `https://teams.microsoft.com/l/chat/${c.id}`
+      };
+    });
+
+    res.json(resolvedChats);
   } catch (err) {
     console.error('[DEBUG PICKER ERROR] Failed to fetch MS Chats:', err.message);
     if (err.response) {
