@@ -108,12 +108,37 @@ router.get('/', authenticateAppToken, async (req, res) => {
       });
     });
 
+    // 5.5. Fetch task teams links (One-to-Many links)
+    const [teamsLinks] = await pool.query('SELECT * FROM task_teams_links ORDER BY created_at ASC');
+    const teamsLinksMap = new Map();
+    teamsLinks.forEach(link => {
+      if (!teamsLinksMap.has(link.task_id)) {
+        teamsLinksMap.set(link.task_id, []);
+      }
+      teamsLinksMap.get(link.task_id).push({
+        id: link.id,
+        taskId: link.task_id,
+        type: link.type,
+        conversationId: link.conversation_id,
+        teamsId: link.teams_id,
+        teamsName: link.teams_name,
+        channelId: link.channel_id,
+        channelName: link.channel_name,
+        channelLink: link.channel_link,
+        chatId: link.chat_id,
+        chatName: link.chat_name,
+        chatLink: link.chat_link,
+        createdAt: link.created_at
+      });
+    });
+
     // 6. Assembly in-memory
     const assembledTasks = tasks.map(t => {
       const creator = usersMap.get(t.creator_id) || null;
       const taskAssignees = assigneesMap.get(t.id) || [];
       const taskTags = tagsMap.get(t.id) || [];
       const taskComments = commentsMap.get(t.id) || [];
+      const taskTeamsLinks = teamsLinksMap.get(t.id) || [];
 
       return {
         id: t.id,
@@ -126,12 +151,14 @@ router.get('/', authenticateAppToken, async (req, res) => {
         assignees: taskAssignees,
         tags: taskTags,
         comments: taskComments,
-        teamsLink: t.teams_link,
-        channelLink: t.channel_link,
-        chatLink: t.chat_link,
-        teamsId: t.teams_id,
-        channelId: t.channel_id,
-        chatId: t.chat_id,
+        teamsLinks: taskTeamsLinks,
+        // Backward compatibility support for legacy single properties (map to first/primary link)
+        teamsLink: taskTeamsLinks[0]?.teamsLink || t.teams_link || '',
+        channelLink: taskTeamsLinks[0]?.channelLink || t.channel_link || '',
+        chatLink: taskTeamsLinks[0]?.chatLink || t.chat_link || '',
+        teamsId: taskTeamsLinks[0]?.teamsId || t.teams_id || '',
+        channelId: taskTeamsLinks[0]?.channelId || t.channel_id || '',
+        chatId: taskTeamsLinks[0]?.chatId || t.chat_id || '',
         teamsMessageId: t.teams_message_id,
         lastSyncedAt: t.last_synced_at
       };
@@ -145,9 +172,6 @@ router.get('/', authenticateAppToken, async (req, res) => {
   }
 });
 
-// ───────────────────────────────────────────────
-// API: Tạo công việc mới
-// ───────────────────────────────────────────────
 router.post('/', authenticateAppToken, async (req, res) => {
   const {
     title,
@@ -163,7 +187,8 @@ router.post('/', authenticateAppToken, async (req, res) => {
     chatLink,
     teamsId,
     channelId,
-    chatId
+    chatId,
+    teamsLinks = [] // Array of links for 1-to-N
   } = req.body;
 
   if (!title) {
@@ -174,15 +199,88 @@ router.post('/', authenticateAppToken, async (req, res) => {
   const resolvedCreator = creatorId || req.user.id;
   const parsedDueDate = dueDate ? new Date(dueDate) : null;
 
+  // Resolve the primary link for legacy columns
+  let primaryLink = null;
+  if (teamsLinks && teamsLinks.length > 0) {
+    primaryLink = teamsLinks[0];
+  } else if (channelId || chatId) {
+    primaryLink = {
+      type: channelId ? 'channel' : 'chat',
+      teamsId: teamsId || '',
+      teamsName: '',
+      channelId: channelId || '',
+      channelName: '',
+      channelLink: channelLink || '',
+      chatId: chatId || '',
+      chatName: '',
+      chatLink: chatLink || ''
+    };
+  }
+
+  const legacyTeamsLink = primaryLink ? (primaryLink.type === 'channel' ? primaryLink.teamsLink || primaryLink.teams_link || primaryLink.teams_link : '') : '';
+  const legacyChannelLink = primaryLink ? primaryLink.channelLink || primaryLink.channel_link : '';
+  const legacyChatLink = primaryLink ? primaryLink.chatLink || primaryLink.chat_link : '';
+  const legacyTeamsId = primaryLink ? primaryLink.teamsId || primaryLink.teams_id : '';
+  const legacyChannelId = primaryLink ? primaryLink.channelId || primaryLink.channel_id : '';
+  const legacyChatId = primaryLink ? primaryLink.chatId || primaryLink.chat_id : '';
+
+  // Deduplicate teams links in-memory before inserting
+  const uniqueLinksMap = new Map();
+  const resolvedLinks = [];
+
+  if (teamsLinks && teamsLinks.length > 0) {
+    teamsLinks.forEach(link => {
+      const convId = link.conversationId || link.channelId || link.chatId || link.conversation_id;
+      if (convId && !uniqueLinksMap.has(convId)) {
+        uniqueLinksMap.set(convId, true);
+        resolvedLinks.push(link);
+      }
+    });
+  } else if (primaryLink) {
+    const convId = primaryLink.channelId || primaryLink.chatId;
+    if (convId) {
+      resolvedLinks.push(primaryLink);
+    }
+  }
+
   try {
-    // 1. Insert base task
+    // 1. Insert base task with primary link fields for backward compatibility
     await pool.query(
       `INSERT INTO tasks (id, title, description, status, priority, due_date, creator_id, 
                           teams_link, channel_link, chat_link, teams_id, channel_id, chat_id) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [taskId, title, description, status, priority, parsedDueDate, resolvedCreator,
-       teamsLink, channelLink, chatLink, teamsId, channelId, chatId]
+       legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId]
     );
+
+    // 1.5. Insert teams links into task_teams_links
+    if (resolvedLinks.length > 0) {
+      for (const link of resolvedLinks) {
+        const linkId = `link-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+        const lType = link.type || (link.channelId ? 'channel' : 'chat');
+        const convId = link.conversationId || link.channelId || link.chatId || (lType === 'channel' ? link.channelId : link.chatId);
+        
+        await pool.query(
+          `INSERT IGNORE INTO task_teams_links 
+           (id, task_id, type, conversation_id, teams_id, teams_name, channel_id, channel_name, channel_link, chat_id, chat_name, chat_link)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            linkId,
+            taskId,
+            lType,
+            convId,
+            link.teamsId || link.teams_id || null,
+            link.teamsName || link.teams_name || null,
+            link.channelId || link.channel_id || null,
+            link.channelName || link.channel_name || null,
+            link.channelLink || link.channel_link || null,
+            link.chatId || link.chat_id || null,
+            link.chatName || link.chat_name || null,
+            link.chatLink || link.chat_link || null
+          ]
+        );
+      }
+    }
 
     // 2. Insert assignees
     if (assigneeIds.length > 0) {
@@ -280,31 +378,112 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
       }
     }
 
-    // Teams link updating
-    if (updates.hasOwnProperty('teamsLink')) {
+    // Teams link updating (One-to-Many / 1-to-N upgrade)
+    if (updates.hasOwnProperty('teamsLinks') || updates.hasOwnProperty('channelId') || updates.hasOwnProperty('chatId')) {
+      let resolvedLinks = [];
+      const uniqueLinksMap = new Map();
+
+      if (updates.hasOwnProperty('teamsLinks')) {
+        const clientTeamsLinks = updates.teamsLinks || [];
+        clientTeamsLinks.forEach(link => {
+          const convId = link.conversationId || link.channelId || link.chatId || link.conversation_id;
+          if (convId && !uniqueLinksMap.has(convId)) {
+            uniqueLinksMap.set(convId, true);
+            resolvedLinks.push(link);
+          }
+        });
+      } else {
+        // Build primary link from legacy parameters (merging with current values if missing)
+        const lChannelId = updates.hasOwnProperty('channelId') ? updates.channelId : current.channel_id;
+        const lChatId = updates.hasOwnProperty('chatId') ? updates.chat_id : current.chat_id;
+        if (lChannelId || lChatId) {
+          resolvedLinks.push({
+            type: lChannelId ? 'channel' : 'chat',
+            teamsId: updates.hasOwnProperty('teamsId') ? updates.teamsId : current.teams_id,
+            teamsName: '',
+            channelId: lChannelId || '',
+            channelName: '',
+            channelLink: updates.hasOwnProperty('channelLink') ? updates.channelLink : current.channel_link,
+            chatId: lChatId || '',
+            chatName: '',
+            chatLink: updates.hasOwnProperty('chatLink') ? updates.chatLink : current.chat_link
+          });
+        }
+      }
+
+      // 1. Delete existing links in task_teams_links
+      await pool.query('DELETE FROM task_teams_links WHERE task_id = ?', [taskId]);
+
+      // 2. Insert new ones
+      if (resolvedLinks.length > 0) {
+        for (const link of resolvedLinks) {
+          const linkId = `link-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+          const lType = link.type || (link.channelId ? 'channel' : 'chat');
+          const convId = link.conversationId || link.channelId || link.chatId || (lType === 'channel' ? link.channelId : link.chatId);
+          
+          await pool.query(
+            `INSERT IGNORE INTO task_teams_links 
+             (id, task_id, type, conversation_id, teams_id, teams_name, channel_id, channel_name, channel_link, chat_id, chat_name, chat_link)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              linkId,
+              taskId,
+              lType,
+              convId,
+              link.teamsId || link.teams_id || null,
+              link.teamsName || link.teams_name || null,
+              link.channelId || link.channel_id || null,
+              link.channelName || link.channel_name || null,
+              link.channelLink || link.channel_link || null,
+              link.chatId || link.chat_id || null,
+              link.chatName || link.chat_name || null,
+              link.chatLink || link.chat_link || null
+            ]
+          );
+        }
+      }
+
+      // 3. Update tasks legacy columns
+      const primaryLink = resolvedLinks[0] || null;
+      const legacyTeamsLink = primaryLink ? (primaryLink.type === 'channel' ? primaryLink.teamsLink || primaryLink.teams_link : '') : '';
+      const legacyChannelLink = primaryLink ? primaryLink.channelLink || primaryLink.channel_link : '';
+      const legacyChatLink = primaryLink ? primaryLink.chatLink || primaryLink.chat_link : '';
+      const legacyTeamsId = primaryLink ? primaryLink.teamsId || primaryLink.teams_id : '';
+      const legacyChannelId = primaryLink ? primaryLink.channelId || primaryLink.channel_id : '';
+      const legacyChatId = primaryLink ? primaryLink.chatId || primaryLink.chat_id : '';
+
       fields.push('teams_link = ?');
-      values.push(updates.teamsLink);
-    }
-    if (updates.hasOwnProperty('channelLink')) {
+      values.push(legacyTeamsLink);
       fields.push('channel_link = ?');
-      values.push(updates.channelLink);
-    }
-    if (updates.hasOwnProperty('chatLink')) {
+      values.push(legacyChannelLink);
       fields.push('chat_link = ?');
-      values.push(updates.chatLink);
-    }
-    if (updates.hasOwnProperty('teamsId')) {
+      values.push(legacyChatLink);
       fields.push('teams_id = ?');
-      values.push(updates.teamsId);
-    }
-    if (updates.hasOwnProperty('channelId')) {
+      values.push(legacyTeamsId);
       fields.push('channel_id = ?');
-      values.push(updates.channelId);
-    }
-    if (updates.hasOwnProperty('chatId')) {
+      values.push(legacyChannelId);
       fields.push('chat_id = ?');
-      values.push(updates.chatId);
+      values.push(legacyChatId);
+    } else {
+      // Legacy updates when channelId/chatId/teamsLinks are not provided but other legacy properties are
+      if (updates.hasOwnProperty('teamsLink')) {
+        fields.push('teams_link = ?');
+        values.push(updates.teamsLink);
+      }
+      if (updates.hasOwnProperty('channelLink')) {
+        fields.push('channel_link = ?');
+        values.push(updates.channelLink);
+      }
+      if (updates.hasOwnProperty('chatLink')) {
+        fields.push('chat_link = ?');
+        values.push(updates.chatLink);
+      }
+      if (updates.hasOwnProperty('teamsId')) {
+        fields.push('teams_id = ?');
+        values.push(updates.teamsId);
+      }
     }
+
     if (updates.hasOwnProperty('teamsMessageId')) {
       fields.push('teams_message_id = ?');
       values.push(updates.teamsMessageId);

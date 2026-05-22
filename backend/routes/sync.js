@@ -104,10 +104,13 @@ async function processWebhookNotification(subscriptionId, resource, resourceData
 
   console.log(`[WEBHOOK] Message from ${senderName}: "${messageText.substring(0, 60)}..."`);
 
-  // 4. Find all tasks mapped to this channel or chat ID
+  // 4. Find all tasks mapped to this channel or chat ID (joined via task_teams_links with legacy fallback)
   const [tasks] = await pool.query(
-    'SELECT * FROM tasks WHERE channel_id = ? OR chat_id = ?',
-    [channel_or_chat_id, channel_or_chat_id]
+    `SELECT DISTINCT t.* 
+     FROM tasks t
+     LEFT JOIN task_teams_links ttl ON t.id = ttl.task_id
+     WHERE ttl.conversation_id = ? OR t.channel_id = ? OR t.chat_id = ?`,
+    [channel_or_chat_id, channel_or_chat_id, channel_or_chat_id]
   );
 
   if (tasks.length === 0) {
@@ -127,18 +130,34 @@ router.post('/sync/poll-teams', async (req, res) => {
 
   try {
     let tasks = [];
+    let links = [];
+
     if (taskId) {
-      const [rows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
-      if (rows.length === 0) {
+      const [tRows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+      if (tRows.length === 0) {
         return res.status(404).json({ error: 'Công việc không tồn tại.' });
       }
-      tasks = rows;
+      tasks = tRows;
+      const [lRows] = await pool.query('SELECT * FROM task_teams_links WHERE task_id = ?', [taskId]);
+      links = lRows;
     } else {
-      // Poll all active tasks linked to MS Teams or Chats
-      const [rows] = await pool.query(
-        'SELECT * FROM tasks WHERE (channel_id IS NOT NULL AND channel_id != "") OR (chat_id IS NOT NULL AND chat_id != "")'
+      // Poll all tasks linked to MS Teams or Chats (either via new table or legacy single columns)
+      const [tRows] = await pool.query(
+        `SELECT DISTINCT t.* FROM tasks t
+         LEFT JOIN task_teams_links ttl ON t.id = ttl.task_id
+         WHERE (ttl.conversation_id IS NOT NULL AND ttl.conversation_id != '')
+            OR (t.channel_id IS NOT NULL AND t.channel_id != '')
+            OR (t.chat_id IS NOT NULL AND t.chat_id != '')`
       );
-      tasks = rows;
+      tasks = tRows;
+      if (tasks.length > 0) {
+        const taskIds = tasks.map(t => t.id);
+        const [lRows] = await pool.query(
+          'SELECT * FROM task_teams_links WHERE task_id IN (?)',
+          [taskIds]
+        );
+        links = lRows;
+      }
     }
 
     if (tasks.length === 0) {
@@ -148,20 +167,49 @@ router.post('/sync/poll-teams', async (req, res) => {
     let processedCount = 0;
     const errors = [];
 
-    // Group tasks by channel/chat to optimize Graph API calls
+    // Group tasks by unique conversation_id to minimize Microsoft Graph API request overhead
     const targetMap = new Map();
+
     tasks.forEach(t => {
-      const id = t.chat_id || t.channel_id;
-      if (!targetMap.has(id)) {
-        targetMap.set(id, {
-          channelId: t.channel_id,
-          chatId: t.chat_id,
-          teamsId: t.teams_id,
-          creatorId: t.creator_id,
-          taskList: []
+      const taskLinks = links.filter(l => l.task_id === t.id);
+
+      if (taskLinks.length > 0) {
+        taskLinks.forEach(link => {
+          const convId = link.conversation_id;
+          if (!convId) return;
+          if (!targetMap.has(convId)) {
+            targetMap.set(convId, {
+              channelId: link.type === 'channel' ? link.channel_id : null,
+              chatId: link.type === 'chat' ? link.chat_id : null,
+              teamsId: link.type === 'channel' ? link.teams_id : null,
+              creatorId: t.creator_id,
+              taskList: []
+            });
+          }
+          const info = targetMap.get(convId);
+          if (!info.taskList.some(existing => existing.id === t.id)) {
+            info.taskList.push(t);
+          }
         });
+      } else {
+        // Legacy fallback to single columns
+        const convId = t.chat_id || t.channel_id;
+        if (convId) {
+          if (!targetMap.has(convId)) {
+            targetMap.set(convId, {
+              channelId: t.channel_id || null,
+              chatId: t.chat_id || null,
+              teamsId: t.teams_id || null,
+              creatorId: t.creator_id,
+              taskList: []
+            });
+          }
+          const info = targetMap.get(convId);
+          if (!info.taskList.some(existing => existing.id === t.id)) {
+            info.taskList.push(t);
+          }
+        }
       }
-      targetMap.get(id).taskList.push(t);
     });
 
     for (const [targetId, info] of targetMap.entries()) {
@@ -487,6 +535,24 @@ router.post('/simulator/teams-sync', async (req, res) => {
     // Fetch the updated task to return to the client
     const [updatedRows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
     const updatedTask = updatedRows[0];
+
+    // Fetch active task teams links
+    const [lRows] = await pool.query('SELECT * FROM task_teams_links WHERE task_id = ?', [taskId]);
+    updatedTask.teamsLinks = lRows.map(link => ({
+      id: link.id,
+      taskId: link.task_id,
+      type: link.type,
+      conversationId: link.conversation_id,
+      teamsId: link.teams_id,
+      teamsName: link.teams_name,
+      channelId: link.channel_id,
+      channelName: link.channel_name,
+      channelLink: link.channel_link,
+      chatId: link.chat_id,
+      chatName: link.chat_name,
+      chatLink: link.chat_link,
+      createdAt: link.created_at
+    }));
 
     res.json({
       message: 'Giả lập đồng bộ Teams thành công!',

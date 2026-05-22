@@ -121,6 +121,29 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 6.5. Create task_teams_links table (One-to-Many Teams/Chats linkages)
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS task_teams_links (
+        id VARCHAR(255) PRIMARY KEY,
+        task_id VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL, -- 'channel' hoặc 'chat'
+        conversation_id VARCHAR(255) NOT NULL, -- channel_id hoặc chat_id làm định danh đồng bộ
+        teams_id VARCHAR(255),
+        teams_name VARCHAR(255),
+        channel_id VARCHAR(255),
+        channel_name VARCHAR(255),
+        channel_link VARCHAR(1000),
+        chat_id VARCHAR(255),
+        chat_name VARCHAR(255),
+        chat_link VARCHAR(1000),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        UNIQUE KEY uq_task_conversation (task_id, conversation_id),
+        INDEX idx_ttl_task_id (task_id),
+        INDEX idx_ttl_conversation_id (conversation_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // 7. Create task_assignees table (Many-to-Many join)
     await connection.query(`
       CREATE TABLE IF NOT EXISTS task_assignees (

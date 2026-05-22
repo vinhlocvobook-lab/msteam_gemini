@@ -31,13 +31,8 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
     task.dueDate ? new Date(task.dueDate).toISOString().substr(0, 10) : ''
   );
   
-  // Teams Integration local states
-  const [teamsLink, setTeamsLink] = useState(task.teamsLink || '');
-  const [channelLink, setChannelLink] = useState(task.channelLink || '');
-  const [chatLink, setChatLink] = useState(task.chatLink || '');
-  const [teamsId, setTeamsId] = useState(task.teamsId || '');
-  const [channelId, setChannelId] = useState(task.channelId || '');
-  const [chatId, setChatId] = useState(task.chatId || '');
+  // Teams Integration local states (1-to-N upgrade)
+  const [teamsLinks, setTeamsLinks] = useState(task.teamsLinks || []);
 
   // Teams Graph Picker UI local states
   const [showPicker, setShowPicker] = useState(false);
@@ -166,34 +161,57 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       const selectedTeam = pickerTeams.find(t => t.id === tempTeamId);
       const selectedChannel = pickerChannels.find(c => c.id === tempChannelId);
       if (selectedChannel) {
-        setTeamsId(tempTeamId);
-        setChannelId(tempChannelId);
-        setChannelLink(selectedChannel.webUrl);
-        setTeamsLink(selectedTeam ? `https://teams.microsoft.com/l/team/${tempTeamId}` : '');
-        setChatId('');
-        setChatLink('');
+        const convId = tempChannelId;
+        // Anti-duplication check
+        if (teamsLinks.some(link => link.conversationId === convId)) {
+          alert('⚠️ Kênh Microsoft Teams này đã được liên kết với công việc này rồi!');
+          return;
+        }
+        const newLink = {
+          id: `link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'channel',
+          conversationId: convId,
+          teamsId: tempTeamId || null,
+          teamsName: selectedTeam ? selectedTeam.displayName : '',
+          channelId: tempChannelId || null,
+          channelName: selectedChannel.displayName || '',
+          channelLink: selectedChannel.webUrl || '',
+          chatId: null,
+          chatName: null,
+          chatLink: null
+        };
+        setTeamsLinks([...teamsLinks, newLink]);
       }
     } else {
       const selectedChat = pickerChats.find(c => c.id === tempChatId);
       if (selectedChat) {
-        setChatId(tempChatId);
-        setChatLink(selectedChat.webUrl);
-        setTeamsId('');
-        setChannelId('');
-        setChannelLink('');
-        setTeamsLink('');
+        const convId = tempChatId;
+        // Anti-duplication check
+        if (teamsLinks.some(link => link.conversationId === convId)) {
+          alert('⚠️ Cuộc trò chuyện này đã được liên kết với công việc này rồi!');
+          return;
+        }
+        const newLink = {
+          id: `link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'chat',
+          conversationId: convId,
+          teamsId: null,
+          teamsName: null,
+          channelId: null,
+          channelName: null,
+          channelLink: null,
+          chatId: tempChatId || null,
+          chatName: selectedChat.topic || '',
+          chatLink: selectedChat.webUrl || ''
+        };
+        setTeamsLinks([...teamsLinks, newLink]);
       }
     }
     setShowPicker(false);
   };
 
-  const handleClearTeamsLink = () => {
-    setTeamsId('');
-    setChannelId('');
-    setChannelLink('');
-    setTeamsLink('');
-    setChatId('');
-    setChatLink('');
+  const handleRemoveLink = (linkId) => {
+    setTeamsLinks(teamsLinks.filter(l => l.id !== linkId));
   };
 
   const handleSave = () => {
@@ -209,12 +227,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       dueDate: parsedDate,
       tags,
       comments,
-      teamsLink,
-      channelLink,
-      chatLink,
-      teamsId,
-      channelId,
-      chatId
+      teamsLinks
     });
     onClose();
   };
@@ -395,92 +408,48 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 Hạn chót
               </label>
               <input 
-                type="date" 
-                className="modal-date-picker" 
+                type="date"
+                className="modal-select"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
 
-            {/* Microsoft Teams Sync Integration */}
+            {/* Microsoft Teams Sync Integration (1-to-N upgraded) */}
             <div className="modal-field" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
-              <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Link size={12} style={{ color: '#8b5cf6' }} />
-                Đồng bộ Microsoft Teams
-              </label>
-              
-              {channelLink || chatLink ? (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  padding: '12px',
-                  background: 'rgba(139, 92, 246, 0.04)',
-                  border: '1px solid rgba(139, 92, 246, 0.15)',
-                  borderRadius: '10px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <MessageCircle size={14} style={{ color: '#a78bfa' }} />
-                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#fff' }}>
-                      {channelLink ? 'Kênh Teams đã liên kết' : 'Cuộc trò chuyện đã liên kết'}
-                    </span>
-                  </div>
-                  
-                  <p style={{ fontSize: '9px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
-                    ID: {channelId || chatId}
-                  </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                  <Link size={12} style={{ color: '#8b5cf6' }} />
+                  Liên kết Teams ({teamsLinks.length})
+                </label>
+                {teamsLinks.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleOpenPicker}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#a78bfa',
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#c084fc'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#a78bfa'}
+                  >
+                    <Plus size={10} />
+                    Thêm liên kết
+                  </button>
+                )}
+              </div>
 
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <a 
-                      href={channelLink || chatLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        padding: '6px',
-                        background: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: '6px',
-                        fontSize: '10px',
-                        color: '#a78bfa',
-                        textDecoration: 'none',
-                        fontWeight: '500',
-                        transition: 'all 0.2s ease',
-                        textAlign: 'center'
-                      }}
-                    >
-                      <ExternalLink size={10} />
-                      Mở Teams
-                    </a>
-                    <button
-                      type="button"
-                      onClick={handleClearTeamsLink}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        padding: '6px',
-                        background: 'rgba(239, 68, 68, 0.08)',
-                        border: '1px solid rgba(239, 68, 68, 0.15)',
-                        borderRadius: '6px',
-                        fontSize: '10px',
-                        color: '#fca5a5',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      <Unlink size={10} />
-                      Hủy liên kết
-                    </button>
-                  </div>
-                </div>
-              ) : (
+              {teamsLinks.length === 0 ? (
                 <button
                   type="button"
                   onClick={handleOpenPicker}
@@ -490,9 +459,9 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                     justifyContent: 'center',
                     gap: '6px',
                     width: '100%',
-                    padding: '8px 12px',
-                    background: 'rgba(139, 92, 246, 0.08)',
-                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                    padding: '10px 12px',
+                    background: 'rgba(139, 92, 246, 0.06)',
+                    border: '1px dashed rgba(139, 92, 246, 0.3)',
                     borderRadius: '10px',
                     fontSize: '11px',
                     fontWeight: '600',
@@ -502,17 +471,138 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                     outline: 'none'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)';
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)';
+                    e.currentTarget.style.borderStyle = 'solid';
                     e.currentTarget.style.transform = 'translateY(-1px)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.08)';
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)';
+                    e.currentTarget.style.borderStyle = 'dashed';
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
                   <MessageCircle size={13} />
                   Liên kết Microsoft Teams
                 </button>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  paddingRight: '4px',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: 'rgba(139, 92, 246, 0.3) rgba(255,255,255,0.02)'
+                }}>
+                  {teamsLinks.map(link => {
+                    const isChannel = link.type === 'channel';
+                    const titleText = isChannel 
+                      ? `${link.teamsName || 'Nhóm'} > ${link.channelName || 'Kênh'}` 
+                      : (link.chatName || 'Cuộc hội thoại');
+                    const linkUrl = isChannel ? link.channelLink : link.chatLink;
+                    const displayId = isChannel ? link.channelId : link.chatId;
+
+                    return (
+                      <div key={link.id} style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        padding: '10px 12px',
+                        background: 'rgba(139, 92, 246, 0.04)',
+                        border: '1px solid rgba(139, 92, 246, 0.15)',
+                        borderRadius: '10px',
+                        transition: 'all 0.2s ease'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                          {isChannel ? (
+                            <Link size={13} style={{ color: '#a78bfa', flexShrink: 0 }} />
+                          ) : (
+                            <MessageCircle size={13} style={{ color: '#a78bfa', flexShrink: 0 }} />
+                          )}
+                          <span 
+                            style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '600', 
+                              color: '#fff',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1 
+                            }}
+                            title={titleText}
+                          >
+                            {titleText}
+                          </span>
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
+                            ID: {displayId}
+                          </span>
+                          
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            {linkUrl && (
+                              <a 
+                                href={linkUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: '4px 8px',
+                                  background: 'rgba(255,255,255,0.03)',
+                                  border: '1px solid rgba(255,255,255,0.06)',
+                                  borderRadius: '6px',
+                                  fontSize: '10px',
+                                  color: '#a78bfa',
+                                  textDecoration: 'none',
+                                  fontWeight: '500',
+                                  transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                              >
+                                <ExternalLink size={10} style={{ marginRight: '3px' }} />
+                                Mở
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLink(link.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '4px 8px',
+                                background: 'rgba(239, 68, 68, 0.06)',
+                                border: '1px solid rgba(239, 68, 68, 0.12)',
+                                borderRadius: '6px',
+                                fontSize: '10px',
+                                color: '#fca5a5',
+                                cursor: 'pointer',
+                                fontWeight: '500',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)';
+                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.06)';
+                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.12)';
+                              }}
+                            >
+                              <Unlink size={10} style={{ marginRight: '3px' }} />
+                              Hủy
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
