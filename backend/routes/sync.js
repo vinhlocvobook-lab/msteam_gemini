@@ -505,34 +505,45 @@ router.post('/simulator/teams-sync', async (req, res) => {
 // ───────────────────────────────────────────────
 
 router.get('/ms-teams', authenticateAppToken, async (req, res) => {
+  console.log(`[DEBUG PICKER] GET /ms-teams - Requesting user: ${req.user?.id} (${req.user?.name})`);
   try {
     let accessToken;
     try {
       accessToken = await getValidMicrosoftToken(req.user.id);
+      console.log(`[DEBUG PICKER] Successfully retrieved Microsoft token for user ${req.user.id}`);
     } catch (err) {
-      console.log(`[PICKER] No Microsoft token found for user ${req.user.id}. Returning mock teams.`);
+      console.log(`[DEBUG PICKER] No Microsoft token found or token invalid for user ${req.user.id}: ${err.message}. Returning mock teams.`);
       return res.json([
         { id: 'mock-team-1', displayName: 'Synapse Project Team' },
         { id: 'mock-team-2', displayName: 'Ban Giám Đốc Synapse' }
       ]);
     }
 
-    const response = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/me/joinedTeams`, {
+    const url = `${MICROSOFT_GRAPH_BASE_URL}/me/joinedTeams`;
+    console.log(`[DEBUG PICKER] Fetching MS Teams from URL: ${url}`);
+    const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const teams = response.data?.value || [];
+    console.log(`[DEBUG PICKER] Successfully fetched ${teams.length} teams from MS Graph`);
     res.json(teams.map(t => ({ id: t.id, displayName: t.displayName })));
   } catch (err) {
-    console.error('[PICKER ERROR] Failed to fetch MS Teams:', err.message);
-    res.status(500).json({ error: 'Không thể tải danh sách Teams từ Microsoft.' });
+    console.error('[DEBUG PICKER ERROR] Failed to fetch MS Teams:', err.message);
+    if (err.response) {
+      console.error(`[DEBUG PICKER ERROR] MS Graph Response Status: ${err.response.status}`);
+      console.error(`[DEBUG PICKER ERROR] MS Graph Response Data:`, JSON.stringify(err.response.data));
+    }
+    res.status(500).json({ error: `Không thể tải danh sách Teams từ Microsoft. Chi tiết: ${err.message}` });
   }
 });
 
 router.get('/ms-teams/:teamId/channels', authenticateAppToken, async (req, res) => {
   const { teamId } = req.params;
+  console.log(`[DEBUG PICKER] GET /ms-teams/${teamId}/channels - Requesting user: ${req.user?.id}`);
   try {
     if (teamId.startsWith('mock-')) {
+      console.log(`[DEBUG PICKER] Team ID starts with mock-, returning mock channels for: ${teamId}`);
       const mockChannels = {
         'mock-team-1': [
           { id: 'mock-chan-1-1', displayName: 'Chung (General)', webUrl: 'https://teams.microsoft.com/l/channel/mock-chan-1-1' },
@@ -548,29 +559,38 @@ router.get('/ms-teams/:teamId/channels', authenticateAppToken, async (req, res) 
     }
 
     const accessToken = await getValidMicrosoftToken(req.user.id);
-    const response = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/teams/${teamId}/channels`, {
+    const url = `${MICROSOFT_GRAPH_BASE_URL}/teams/${teamId}/channels`;
+    console.log(`[DEBUG PICKER] Fetching MS Channels from URL: ${url}`);
+    const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const channels = response.data?.value || [];
+    console.log(`[DEBUG PICKER] Successfully fetched ${channels.length} channels for team ${teamId}`);
     res.json(channels.map(c => ({
       id: c.id,
       displayName: c.displayName,
       webUrl: c.webUrl || `https://teams.microsoft.com/l/channel/${c.id}`
     })));
   } catch (err) {
-    console.error('[PICKER ERROR] Failed to fetch channels:', err.message);
-    res.status(500).json({ error: 'Không thể tải danh sách Kênh.' });
+    console.error(`[DEBUG PICKER ERROR] Failed to fetch channels for team ${teamId}:`, err.message);
+    if (err.response) {
+      console.error(`[DEBUG PICKER ERROR] MS Graph Response Status: ${err.response.status}`);
+      console.error(`[DEBUG PICKER ERROR] MS Graph Response Data:`, JSON.stringify(err.response.data));
+    }
+    res.status(500).json({ error: `Không thể tải danh sách Kênh. Chi tiết: ${err.message}` });
   }
 });
 
 router.get('/ms-chats', authenticateAppToken, async (req, res) => {
+  console.log(`[DEBUG PICKER] GET /ms-chats - Requesting user: ${req.user?.id}`);
   try {
     let accessToken;
     try {
       accessToken = await getValidMicrosoftToken(req.user.id);
+      console.log(`[DEBUG PICKER] Successfully retrieved Microsoft token for user ${req.user.id}`);
     } catch (err) {
-      console.log(`[PICKER] No Microsoft token found for user ${req.user.id}. Returning mock chats.`);
+      console.log(`[DEBUG PICKER] No Microsoft token found or token invalid for user ${req.user.id}: ${err.message}. Returning mock chats.`);
       return res.json([
         { id: 'mock-chat-1', topic: 'Thảo luận PO & UI/UX (Lộc & Lan)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-1' },
         { id: 'mock-chat-2', topic: 'Nhóm Dev Frontend & Backend (Huy & Bình)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-2' },
@@ -578,11 +598,14 @@ router.get('/ms-chats', authenticateAppToken, async (req, res) => {
       ]);
     }
 
-    const response = await axios.get(`${MICROSOFT_GRAPH_BASE_URL}/me/chats?$top=50`, {
+    const url = `${MICROSOFT_GRAPH_BASE_URL}/me/chats?$top=50`;
+    console.log(`[DEBUG PICKER] Fetching MS Chats from URL: ${url}`);
+    const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     
     const chats = response.data?.value || [];
+    console.log(`[DEBUG PICKER] Successfully fetched ${chats.length} chats from MS Graph`);
     res.json(chats.map(c => ({
       id: c.id,
       topic: c.topic || `Cuộc hội thoại (${c.chatType})`,
@@ -590,8 +613,12 @@ router.get('/ms-chats', authenticateAppToken, async (req, res) => {
       webUrl: c.webUrl || `https://teams.microsoft.com/l/chat/${c.id}`
     })));
   } catch (err) {
-    console.error('[PICKER ERROR] Failed to fetch MS Chats:', err.message);
-    res.status(500).json({ error: 'Không thể tải danh sách các Cuộc trò chuyện.' });
+    console.error('[DEBUG PICKER ERROR] Failed to fetch MS Chats:', err.message);
+    if (err.response) {
+      console.error(`[DEBUG PICKER ERROR] MS Graph Response Status: ${err.response.status}`);
+      console.error(`[DEBUG PICKER ERROR] MS Graph Response Data:`, JSON.stringify(err.response.data));
+    }
+    res.status(500).json({ error: `Không thể tải danh sách các Cuộc trò chuyện. Chi tiết: ${err.message}` });
   }
 });
 
