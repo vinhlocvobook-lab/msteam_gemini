@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"name": "tasks_management_gemini",
+			"path": ".."
+		},
+		{
+			"name": "SSH FS - cntrungan",
+			"uri": "ssh://cntrungan/"
+		},
+		{
+			"path": "../../../ms_sso"
+		}
+	],
+	"settings": {}
+}
