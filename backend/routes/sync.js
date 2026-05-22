@@ -504,7 +504,7 @@ router.post('/simulator/teams-sync', async (req, res) => {
 // MS GRAPH PICKER ENDPOINTS (WITH MOCK FALLBACK)
 // ───────────────────────────────────────────────
 
-router.get('/ms-teams', authenticateAppToken, async (req, res) => {
+router.get('/sync/ms-teams', authenticateAppToken, async (req, res) => {
   console.log(`[DEBUG PICKER] GET /ms-teams - Requesting user: ${req.user?.id} (${req.user?.name})`);
   try {
     let accessToken;
@@ -538,7 +538,7 @@ router.get('/ms-teams', authenticateAppToken, async (req, res) => {
   }
 });
 
-router.get('/ms-teams/:teamId/channels', authenticateAppToken, async (req, res) => {
+router.get('/sync/ms-teams/:teamId/channels', authenticateAppToken, async (req, res) => {
   const { teamId } = req.params;
   console.log(`[DEBUG PICKER] GET /ms-teams/${teamId}/channels - Requesting user: ${req.user?.id}`);
   try {
@@ -582,7 +582,7 @@ router.get('/ms-teams/:teamId/channels', authenticateAppToken, async (req, res) 
   }
 });
 
-router.get('/ms-chats', authenticateAppToken, async (req, res) => {
+router.get('/sync/ms-chats', authenticateAppToken, async (req, res) => {
   console.log(`[DEBUG PICKER] GET /ms-chats - Requesting user: ${req.user?.id}`);
   try {
     let accessToken;
