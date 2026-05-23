@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, User, Calendar, ShieldAlert, Tag, MessageSquare, ListTodo, Plus, HelpCircle, Link, Unlink, ExternalLink, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, User, Calendar, ShieldAlert, Tag, MessageSquare, ListTodo, Plus, HelpCircle, Link, Unlink, ExternalLink, MessageCircle, ChevronDown, Search, Check } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 import { api } from '../utils/api';
 
@@ -9,6 +9,225 @@ const STATUS_OPTIONS = [
   { id: 'review', label: 'Đang review' },
   { id: 'done', label: 'Hoàn thành' }
 ];
+
+// A beautiful, responsive custom searchable select component
+function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm...", emptyMessage = "Không tìm thấy kết quả" }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef(null);
+  
+  // Find current label
+  const selectedOption = options.find(opt => opt.id === value);
+  const displayLabel = selectedOption ? selectedOption.label : (placeholder || 'Chọn một tùy chọn...');
+
+  // Toggle dropdown
+  const toggleDropdown = () => {
+    setIsOpen(!isOpen);
+    setSearchQuery('');
+  };
+
+  // Close when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Filter options based on query (case-insensitive, accents-friendly Vietnamese search)
+  const removeVietnameseTones = (str) => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D');
+  };
+
+  const filteredOptions = options.filter(opt => {
+    if (!searchQuery) return true;
+    const cleanLabel = removeVietnameseTones(opt.label.toLowerCase());
+    const cleanQuery = removeVietnameseTones(searchQuery.toLowerCase());
+    return cleanLabel.includes(cleanQuery);
+  });
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      {/* Trigger Button */}
+      <div 
+        onClick={toggleDropdown}
+        className="modal-select"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: isOpen ? '1px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: isOpen ? '0 0 10px rgba(139, 92, 246, 0.15)' : 'none',
+          padding: '10px 12px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          fontSize: '13px',
+          color: selectedOption ? '#fff' : 'var(--text-muted)'
+        }}
+      >
+        <span style={{ 
+          overflow: 'hidden', 
+          textOverflow: 'ellipsis', 
+          whiteSpace: 'nowrap',
+          flex: 1
+        }}>
+          {displayLabel}
+        </span>
+        <ChevronDown size={14} style={{ 
+          color: 'var(--text-muted)',
+          transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease',
+          flexShrink: 0
+        }} />
+      </div>
+
+      {/* Dropdown Panel */}
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 6px)',
+          left: 0,
+          right: 0,
+          background: '#18181b', // solid matching select list background
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+          borderRadius: '8px',
+          zIndex: 1000,
+          padding: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          animation: 'slideUp 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}>
+          {/* Search Box */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            borderRadius: '6px',
+            padding: '6px 8px',
+          }}>
+            <Search size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <input 
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Nhập từ khóa tìm kiếm..."
+              style={{
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                color: '#fff',
+                fontSize: '11.5px',
+                width: '100%',
+                padding: 0
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: '10px'
+                }}
+              >
+                Xóa
+              </button>
+            )}
+          </div>
+
+          {/* Options List */}
+          <div style={{
+            maxHeight: '180px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(255, 255, 255, 0.1) transparent'
+          }}>
+            {filteredOptions.length === 0 ? (
+              <div style={{
+                padding: '12px 8px',
+                textAlign: 'center',
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                fontStyle: 'italic'
+              }}>
+                {emptyMessage}
+              </div>
+            ) : (
+              filteredOptions.map(opt => {
+                const isSelected = opt.id === value;
+                return (
+                  <div
+                    key={opt.id}
+                    onClick={() => {
+                      onChange(opt.id);
+                      setIsOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      background: isSelected ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                      color: isSelected ? '#c084fc' : '#e4e4e7',
+                      transition: 'all 0.15s ease',
+                      fontWeight: isSelected ? '600' : 'normal'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      flex: 1
+                    }}>
+                      {opt.label}
+                    </span>
+                    {isSelected && <Check size={12} style={{ color: '#c084fc', flexShrink: 0 }} />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function TaskEditorModal({ task, onClose, onSave, activeUser, teamMembers = USERS }) {
   const [title, setTitle] = useState(task.title || '');
@@ -779,15 +998,13 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                             {pickerTeams.length === 0 ? (
                               <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>Không tìm thấy nhóm nào.</p>
                             ) : (
-                              <select 
-                                className="modal-select"
+                              <SearchableSelect
                                 value={tempTeamId}
-                                onChange={(e) => handleTeamChange(e.target.value)}
-                              >
-                                {pickerTeams.map(t => (
-                                  <option key={t.id} value={t.id}>{t.displayName}</option>
-                                ))}
-                              </select>
+                                onChange={handleTeamChange}
+                                options={pickerTeams.map(t => ({ id: t.id, label: t.displayName }))}
+                                placeholder="Chọn Nhóm..."
+                                emptyMessage="Không tìm thấy nhóm nào"
+                              />
                             )}
                           </div>
 
@@ -797,15 +1014,13 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                             {pickerChannels.length === 0 ? (
                               <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>Không tìm thấy kênh nào.</p>
                             ) : (
-                              <select 
-                                className="modal-select"
+                              <SearchableSelect
                                 value={tempChannelId}
-                                onChange={(e) => setTempChannelId(e.target.value)}
-                              >
-                                {pickerChannels.map(c => (
-                                  <option key={c.id} value={c.id}>{c.displayName}</option>
-                                ))}
-                              </select>
+                                onChange={setTempChannelId}
+                                options={pickerChannels.map(c => ({ id: c.id, label: c.displayName }))}
+                                placeholder="Chọn Kênh..."
+                                emptyMessage="Không tìm thấy kênh nào"
+                              />
                             )}
                           </div>
                         </>
@@ -816,15 +1031,13 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                           {pickerChats.length === 0 ? (
                             <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>Không tìm thấy cuộc trò chuyện nào.</p>
                           ) : (
-                            <select 
-                              className="modal-select"
+                            <SearchableSelect
                               value={tempChatId}
-                              onChange={(e) => setTempChatId(e.target.value)}
-                            >
-                              {pickerChats.map(c => (
-                                <option key={c.id} value={c.id}>{c.topic}</option>
-                              ))}
-                            </select>
+                              onChange={setTempChatId}
+                              options={pickerChats.map(c => ({ id: c.id, label: c.topic }))}
+                              placeholder="Chọn Cuộc trò chuyện..."
+                              emptyMessage="Không tìm thấy cuộc trò chuyện nào"
+                            />
                           )}
                         </div>
                       )}
