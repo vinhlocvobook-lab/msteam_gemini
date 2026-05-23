@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3 } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3, Calendar, ChevronLeft, ChevronRight, Clock, CalendarDays } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
@@ -20,7 +20,9 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false); // Turn off simulation by default for DB sync stability
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'mine'
   
-  const [activeTab, setActiveTab] = useState('board'); // 'board' | 'analytics'
+  const [activeTab, setActiveTab] = useState('board'); // 'board' | 'analytics' | 'calendar'
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [selectedTimeRange, setSelectedTimeRange] = useState('today');
   const [digestContentModal, setDigestContentModal] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -505,6 +507,389 @@ export default function App() {
     }
     return true;
   });
+
+  // ───────────────────────────────────────────────
+  // PREMIUM DATE CALCULATIONS & TIME FRAME FILTERS
+  // ───────────────────────────────────────────────
+  const getStartOfDay = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const isSameDay = (d1, d2) => {
+    return getStartOfDay(d1).getTime() === getStartOfDay(d2).getTime();
+  };
+
+  const getWeekRange = (offset = 0) => {
+    const today = new Date();
+    const currentDay = today.getDay();
+    // Monday as start of week
+    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+    const start = new Date(today);
+    start.setDate(today.getDate() + distanceToMonday + offset * 7);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  };
+
+  const getMonthRange = (offset = 0) => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + offset + 1, 0, 23, 59, 59, 999);
+    return { start, end };
+  };
+
+  const getYearRange = (offset = 0) => {
+    const today = new Date();
+    const start = new Date(today.getFullYear() + offset, 0, 1);
+    const end = new Date(today.getFullYear() + offset, 11, 31, 23, 59, 59, 999);
+    return { start, end };
+  };
+
+  // Filter dynamic tasks lists by ranges
+  const getTasksInTimeRange = (rangeKey) => {
+    const today = new Date();
+    return tasks.filter(t => {
+      if (!t.dueDate) return false;
+      const tDate = new Date(t.dueDate);
+
+      switch (rangeKey) {
+        case 'yesterday': {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          return isSameDay(tDate, yesterday);
+        }
+        case 'today':
+          return isSameDay(tDate, today);
+        case 'tomorrow': {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          return isSameDay(tDate, tomorrow);
+        }
+        case 'last_week': {
+          const { start, end } = getWeekRange(-1);
+          return tDate >= start && tDate <= end;
+        }
+        case 'this_week': {
+          const { start, end } = getWeekRange(0);
+          return tDate >= start && tDate <= end;
+        }
+        case 'next_week': {
+          const { start, end } = getWeekRange(1);
+          return tDate >= start && tDate <= end;
+        }
+        case 'last_month': {
+          const { start, end } = getMonthRange(-1);
+          return tDate >= start && tDate <= end;
+        }
+        case 'this_month': {
+          const { start, end } = getMonthRange(0);
+          return tDate >= start && tDate <= end;
+        }
+        case 'next_month': {
+          const { start, end } = getMonthRange(1);
+          return tDate >= start && tDate <= end;
+        }
+        case 'last_year': {
+          const { start, end } = getYearRange(-1);
+          return tDate >= start && tDate <= end;
+        }
+        case 'this_year': {
+          const { start, end } = getYearRange(0);
+          return tDate >= start && tDate <= end;
+        }
+        case 'next_year': {
+          const { start, end } = getYearRange(1);
+          return tDate >= start && tDate <= end;
+        }
+        default:
+          return false;
+      }
+    });
+  };
+
+  // ───────────────────────────────────────────────
+  // PREMIUM INTERACTIVE TASK CALENDAR RENDERER
+  // ───────────────────────────────────────────────
+  const renderCalendarView = () => {
+    // Generate dates for current calendar grid view (Monthly)
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+
+    // Start of current month
+    const firstDayOfMonth = new Date(year, month, 1);
+    // Number of days in current month
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // Day of the week for the first day (Monday index = 0, Sunday index = 6)
+    let firstDayIndex = firstDayOfMonth.getDay() - 1; 
+    if (firstDayIndex === -1) firstDayIndex = 6; // Sunday fix
+
+    // Prepare calendar cells array
+    const dayCells = [];
+
+    // 1. Prefix days from previous month
+    const prevMonthDaysTotal = new Date(year, month, 0).getDate();
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const dayNum = prevMonthDaysTotal - i;
+      const cellDate = new Date(year, month - 1, dayNum);
+      dayCells.push({
+        date: cellDate,
+        dayNum,
+        isCurrentMonth: false
+      });
+    }
+
+    // 2. Days of current month
+    for (let i = 1; i <= totalDaysInMonth; i++) {
+      const cellDate = new Date(year, month, i);
+      dayCells.push({
+        date: cellDate,
+        dayNum: i,
+        isCurrentMonth: true
+      });
+    }
+
+    // 3. Suffix days of next month to fill grid (Usually up to 35 or 42 cells)
+    const totalCells = dayCells.length > 35 ? 42 : 35;
+    const remainingCells = totalCells - dayCells.length;
+    for (let i = 1; i <= remainingCells; i++) {
+      const cellDate = new Date(year, month + 1, i);
+      dayCells.push({
+        date: cellDate,
+        dayNum: i,
+        isCurrentMonth: false
+      });
+    }
+
+    const weekdays = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+
+    const handlePrevMonth = () => {
+      setCalendarDate(new Date(year, month - 1, 1));
+    };
+
+    const handleNextMonth = () => {
+      setCalendarDate(new Date(year, month + 1, 1));
+    };
+
+    const handleTodayClick = () => {
+      setCalendarDate(new Date());
+    };
+
+    // Filtered list under left sidebar selector
+    const activeRangeTasks = getTasksInTimeRange(selectedTimeRange);
+
+    const timeFilters = [
+      { section: 'Ngày', items: [
+        { key: 'yesterday', label: 'Hôm qua', icon: <Clock size={12} /> },
+        { key: 'today', label: 'Hôm nay', icon: <Clock size={12} /> },
+        { key: 'tomorrow', label: 'Ngày mai', icon: <Clock size={12} /> }
+      ]},
+      { section: 'Tuần', items: [
+        { key: 'last_week', label: 'Tuần trước', icon: <CalendarDays size={12} /> },
+        { key: 'this_week', label: 'Tuần này', icon: <CalendarDays size={12} /> },
+        { key: 'next_week', label: 'Tuần tới', icon: <CalendarDays size={12} /> }
+      ]},
+      { section: 'Tháng', items: [
+        { key: 'last_month', label: 'Tháng trước', icon: <Calendar size={12} /> },
+        { key: 'this_month', label: 'Tháng này', icon: <Calendar size={12} /> },
+        { key: 'next_month', label: 'Tháng tới', icon: <Calendar size={12} /> }
+      ]},
+      { section: 'Năm', items: [
+        { key: 'last_year', label: 'Năm trước', icon: <Layers size={12} /> },
+        { key: 'this_year', label: 'Năm nay', icon: <Layers size={12} /> },
+        { key: 'next_year', label: 'Năm tới', icon: <Layers size={12} /> }
+      ]}
+    ];
+
+    const getPrioLabel = (p) => {
+      if (p === 'high') return 'Khẩn cấp';
+      if (p === 'low') return 'Thấp';
+      return 'Vừa';
+    };
+
+    return (
+      <div className="calendar-dashboard">
+        {/* Left Side: Time Filters */}
+        <div className="time-filter-panel glass-panel">
+          <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '15px', fontWeight: '700', color: '#fff', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Filter size={15} style={{ color: 'var(--primary)' }} />
+            Mốc Thời Gian
+          </h3>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+            {timeFilters.map(sec => (
+              <div key={sec.section} className="time-filter-section">
+                <div className="time-filter-sec-title">{sec.section}</div>
+                {sec.items.map(item => {
+                  const cnt = getTasksInTimeRange(item.key).length;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => setSelectedTimeRange(item.key)}
+                      className={`time-filter-btn ${selectedTimeRange === item.key ? 'active' : ''}`}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </div>
+                      <span className="time-filter-count">{cnt}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right Side: Monthly Calendar Grid & List view */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Calendar Grid panel */}
+          <div className="calendar-panel glass-panel">
+            
+            {/* Header navigator */}
+            <div className="calendar-header">
+              <div className="calendar-month-title">
+                <Calendar size={18} style={{ color: '#06b6d4' }} />
+                <span>Tháng {month + 1}, {year}</span>
+              </div>
+              <div className="calendar-nav-group">
+                <button onClick={handleTodayClick} className="calendar-nav-btn" style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '0 12px' }}>
+                  Hôm nay
+                </button>
+                <button onClick={handlePrevMonth} className="calendar-nav-btn" title="Tháng trước">
+                  <ChevronLeft size={16} />
+                </button>
+                <button onClick={handleNextMonth} className="calendar-nav-btn" title="Tháng sau">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Weekdays Labels */}
+            <div className="calendar-weekdays-grid">
+              {weekdays.map(d => <div key={d}>{d}</div>)}
+            </div>
+
+            {/* Days Grid */}
+            <div className="calendar-days-grid">
+              {dayCells.map((cell, idx) => {
+                const cellTasks = tasks.filter(t => t.dueDate && isSameDay(new Date(t.dueDate), cell.date));
+                const cellIsToday = isSameDay(cell.date, new Date());
+                
+                return (
+                  <div 
+                    key={idx} 
+                    className={`calendar-day-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cellIsToday ? 'today' : ''}`}
+                    onDoubleClick={() => {
+                      // Trigger task creation for double-clicked day
+                      const initialTitle = "";
+                      setSelectedTask({
+                        id: 't-new-' + Date.now(),
+                        title: '',
+                        description: '',
+                        status: 'todo',
+                        priority: 'medium',
+                        dueDate: cell.date,
+                        assignees: [],
+                        tags: [],
+                        comments: []
+                      });
+                    }}
+                    title="Nhấp đúp chuột để tạo việc nhanh tại ngày này"
+                  >
+                    <div className="calendar-day-number">{cell.dayNum}</div>
+                    
+                    <div className="calendar-task-list">
+                      {cellTasks.map(t => (
+                        <div
+                          key={t.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTask(t);
+                          }}
+                          className={`calendar-task-item ${t.priority}`}
+                          title={`[${getPrioLabel(t.priority)}] ${t.title}`}
+                        >
+                          {t.title}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+
+          {/* List display under selection */}
+          <div className="chart-panel glass-panel" style={{ padding: '24px' }}>
+            <h3 className="chart-panel-title" style={{ margin: 0, paddingBottom: '14px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <Clock size={16} style={{ color: '#fbbf24' }} />
+              <span>Danh sách công việc: {timeFilters.flatMap(f => f.items).find(i => i.key === selectedTimeRange)?.label || selectedTimeRange} ({activeRangeTasks.length})</span>
+            </h3>
+
+            {activeRangeTasks.length === 0 ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12.5px', fontStyle: 'italic' }}>
+                Không có công việc nào trong mốc thời gian này.
+              </div>
+            ) : (
+              <div className="filtered-tasks-grid" style={{ marginTop: '16px' }}>
+                {activeRangeTasks.map(task => {
+                  const dueStr = new Date(task.dueDate).toLocaleDateString('vi-VN') + ' ' + new Date(task.dueDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => setSelectedTask(task)}
+                      className="kpi-card glass-panel"
+                      style={{
+                        padding: '16px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        borderLeft: `4px solid ${task.priority === 'high' ? 'var(--danger)' : (task.priority === 'low' ? 'var(--success)' : 'var(--warning)')}`
+                      }}
+                    >
+                      <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', color: task.priority === 'high' ? 'var(--danger)' : (task.priority === 'low' ? 'var(--success)' : 'var(--warning)') }}>
+                          {getPrioLabel(task.priority)}
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '500' }}>
+                          Trạng thái: {task.status === 'done' ? 'Hoàn thành' : (task.status === 'review' ? 'Đang review' : (task.status === 'in_progress' ? 'Đang làm' : 'Cần làm'))}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff', lineHeight: 1.3, width: '100%', whiteSpace: 'nowrap', overflow: 'hidden', text_overflow: 'ellipsis' }}>
+                        {task.title}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={11} />
+                          <span>Hạn: {dueStr}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '-4px' }}>
+                          {task.assignees && task.assignees.map(a => (
+                            <img key={a.id} src={a.avatar} alt={a.name} style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.2)' }} title={a.name} />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    );
+  };
 
   // ───────────────────────────────────────────────
   // 1. LOADING SCREEN
@@ -1022,6 +1407,26 @@ export default function App() {
           <BarChart3 size={13} style={{ color: '#a78bfa' }} />
           Thống Kê & AI
         </button>
+        <button
+          onClick={() => setActiveTab('calendar')}
+          style={{
+            padding: '6px 16px',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeTab === 'calendar' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'calendar' ? '#fff' : 'var(--text-secondary)',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Calendar size={13} style={{ color: '#06b6d4' }} />
+          Lịch Công Việc
+        </button>
       </div>
 
 
@@ -1193,7 +1598,9 @@ export default function App() {
         </div>
       </header>
 
-      {activeTab === 'analytics' ? (
+      {activeTab === 'calendar' ? (
+        renderCalendarView()
+      ) : activeTab === 'analytics' ? (
         renderAnalytics()
       ) : (
         <>
