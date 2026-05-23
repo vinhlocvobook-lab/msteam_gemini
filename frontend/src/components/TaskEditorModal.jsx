@@ -14,6 +14,7 @@ const STATUS_OPTIONS = [
 function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm...", emptyMessage = "Không tìm thấy kết quả" }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef(null);
   
   // Find current label
@@ -56,6 +57,35 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm
     const cleanQuery = removeVietnameseTones(searchQuery.toLowerCase());
     return cleanLabel.includes(cleanQuery);
   });
+
+  // Reset highlight index when query or open state changes
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [searchQuery, isOpen]);
+
+  // Handle keyboard events for premium navigation
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex(prev => 
+        prev < filteredOptions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex(prev => 
+        prev > 0 ? prev - 1 : filteredOptions.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredOptions.length > 0 && highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+        onChange(filteredOptions[highlightedIndex].id);
+        setIsOpen(false);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsOpen(false);
+    }
+  };
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
@@ -129,6 +159,7 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm
               autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Nhập từ khóa tìm kiếm..."
               style={{
                 background: 'none',
@@ -179,8 +210,9 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm
                 {emptyMessage}
               </div>
             ) : (
-              filteredOptions.map(opt => {
+              filteredOptions.map((opt, index) => {
                 const isSelected = opt.id === value;
+                const isHighlighted = index === highlightedIndex;
                 return (
                   <div
                     key={opt.id}
@@ -197,17 +229,14 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm
                       borderRadius: '6px',
                       cursor: 'pointer',
                       fontSize: '12px',
-                      background: isSelected ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                      color: isSelected ? '#c084fc' : '#e4e4e7',
+                      background: isSelected 
+                        ? 'rgba(139, 92, 246, 0.15)' 
+                        : (isHighlighted ? 'rgba(255, 255, 255, 0.05)' : 'transparent'),
+                      color: isSelected ? '#c084fc' : (isHighlighted ? '#fff' : '#e4e4e7'),
                       transition: 'all 0.15s ease',
                       fontWeight: isSelected ? '600' : 'normal'
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'transparent';
-                    }}
+                    onMouseEnter={() => setHighlightedIndex(index)}
                   >
                     <span style={{
                       overflow: 'hidden',
@@ -244,6 +273,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
     }
     return [];
   });
+  const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
   
   const [priority, setPriority] = useState(task.priority || 'medium');
   const formatDateTimeLocal = (dateString) => {
@@ -572,6 +602,52 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 <User size={12} />
                 Người thực hiện ({assigneeIds.length})
               </label>
+
+              {/* Search input for assignees */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                marginBottom: '8px'
+              }}>
+                <Search size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <input 
+                  type="text"
+                  value={assigneeSearchQuery}
+                  onChange={(e) => setAssigneeSearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm người thực hiện..."
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    outline: 'none',
+                    color: '#fff',
+                    fontSize: '11px',
+                    width: '100%',
+                    padding: 0
+                  }}
+                />
+                {assigneeSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setAssigneeSearchQuery('')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontSize: '9px'
+                    }}
+                  >
+                    Xóa
+                  </button>
+                )}
+              </div>
+
               <div style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -584,34 +660,59 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 borderRadius: '10px',
                 scrollbarWidth: 'thin'
               }}>
-                {teamMembers.map(u => {
-                  const isChecked = assigneeIds.includes(u.id);
-                  return (
-                    <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11px', color: isChecked ? '#fff' : 'var(--text-secondary)', margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setAssigneeIds([...assigneeIds, u.id]);
-                          } else {
-                            setAssigneeIds(assigneeIds.filter(id => id !== u.id));
-                          }
-                        }}
-                        style={{
-                          accentColor: '#8b5cf6',
-                          width: '13px',
-                          height: '13px',
-                          cursor: 'pointer'
-                        }}
-                      />
-                      <img src={u.avatar} alt={u.name} style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
-                      <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {u.name} <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>({u.role})</span>
+                {(() => {
+                  const removeTones = (str) => {
+                    return str
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/đ/g, 'd')
+                      .replace(/Đ/g, 'D');
+                  };
+                  const filteredTeamMembers = teamMembers.filter(u => {
+                    if (!assigneeSearchQuery.trim()) return true;
+                    const cleanName = removeTones(u.name.toLowerCase());
+                    const cleanRole = removeTones((u.role || '').toLowerCase());
+                    const cleanQuery = removeTones(assigneeSearchQuery.toLowerCase());
+                    return cleanName.includes(cleanQuery) || cleanRole.includes(cleanQuery);
+                  });
+
+                  if (filteredTeamMembers.length === 0) {
+                    return (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '12px 0' }}>
+                        Không tìm thấy kết quả
                       </span>
-                    </label>
-                  );
-                })}
+                    );
+                  }
+
+                  return filteredTeamMembers.map(u => {
+                    const isChecked = assigneeIds.includes(u.id);
+                    return (
+                      <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11px', color: isChecked ? '#fff' : 'var(--text-secondary)', margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAssigneeIds([...assigneeIds, u.id]);
+                            } else {
+                              setAssigneeIds(assigneeIds.filter(id => id !== u.id));
+                            }
+                          }}
+                          style={{
+                            accentColor: '#8b5cf6',
+                            width: '13px',
+                            height: '13px',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <img src={u.avatar} alt={u.name} style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
+                        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {u.name} <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>({u.role})</span>
+                        </span>
+                      </label>
+                    );
+                  });
+                })()}
               </div>
             </div>
 
