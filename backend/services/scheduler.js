@@ -2,6 +2,7 @@ import pool from '../db.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import { getValidMicrosoftToken } from '../auth.js';
+import { generateDailyMorningDigest } from './aiService.js';
 
 const MICROSOFT_GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 
@@ -257,9 +258,114 @@ async function checkOverdueTasks() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 3. SCHEDULER BOOTSTRAPPER
+// 3. DAILY MORNING DIGEST SCANNER & SENDER
+// ─────────────────────────────────────────────────────────────
+export async function sendDailyMorningDigestForUser(userId) {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+
+    // 1. Get user details
+    const [users] = await connection.query('SELECT name, id FROM users WHERE id = ?', [userId]);
+    if (users.length === 0) {
+      throw new Error(`User not found: ${userId}`);
+    }
+    const user = users[0];
+
+    // 2. Fetch all active/unfinished tasks assigned to or created by this user
+    const [tasks] = await connection.query(
+      `SELECT DISTINCT t.* 
+       FROM tasks t
+       LEFT JOIN task_assignees ta ON t.id = ta.task_id
+       WHERE t.status != 'done' AND (t.creator_id = ? OR ta.user_id = ?)`,
+      [userId, userId]
+    );
+
+    // 3. Generate AI Daily Digest content
+    const digestContent = await generateDailyMorningDigest(user.name, tasks);
+
+    // 4. Find all Microsoft Teams links for this user's tasks
+    const [links] = await connection.query(
+      `SELECT DISTINCT ttl.* 
+       FROM task_teams_links ttl
+       JOIN tasks t ON ttl.task_id = t.id
+       LEFT JOIN task_assignees ta ON t.id = ta.task_id
+       WHERE t.status != 'done' AND (t.creator_id = ? OR ta.user_id = ?)`,
+      [userId, userId]
+    );
+
+    let deliveredCount = 0;
+    
+    // 5. Send digest to linked Teams channels/chats
+    if (links.length > 0) {
+      const subject = `☀️ Bản tin chào buổi sáng Synapse AI`;
+      
+      // De-duplicate conversation IDs to avoid sending multiple identical digests to the same chat
+      const uniqueLinks = [];
+      const seenConversations = new Set();
+      for (const link of links) {
+        if (!seenConversations.has(link.conversation_id)) {
+          seenConversations.add(link.conversation_id);
+          uniqueLinks.push(link);
+        }
+      }
+
+      for (const link of uniqueLinks) {
+        await sendTeamsNotification(userId, link, subject, digestContent);
+        await delay(500); // Throttling: 500ms delay between Graph API requests
+        deliveredCount++;
+      }
+    } else {
+      console.log(`[DAILY DIGEST] User ${user.name} has no linked Teams channels/chats. Creating system log/notification fallback.`);
+      
+      // Fallback: create a system notification for the user inside the app
+      const notifId = `notif-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const notifTitle = `☀️ Bản tin chào buổi sáng Synapse AI`;
+      await connection.query(
+        `INSERT INTO notifications (id, user_id, title, content, type) 
+         VALUES (?, ?, ?, ?, 'reminder')`,
+        [notifId, userId, notifTitle, digestContent, 'reminder']
+      );
+    }
+
+    return { success: true, deliveredCount, digestContent };
+
+  } catch (err) {
+    console.error(`[DAILY DIGEST ERROR] Failed to send digest for user ${userId}:`, err.message);
+    throw err;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function sendAllDailyMorningDigests() {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [users] = await connection.query('SELECT id FROM users');
+    
+    console.log(`[SCHEDULER] Starting automated Daily Morning Digests for ${users.length} users...`);
+    for (const user of users) {
+      try {
+        await sendDailyMorningDigestForUser(user.id);
+        await delay(1000);
+      } catch (err) {
+        console.error(`[SCHEDULER ERROR] Failed to send automated digest for user ${user.id}:`, err.message);
+      }
+    }
+    console.log('[SCHEDULER] Automated Daily Morning Digests completed.');
+  } catch (err) {
+    console.error('[SCHEDULER ERROR] sendAllDailyMorningDigests master runner failed:', err.message);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4. SCHEDULER BOOTSTRAPPER
 // ─────────────────────────────────────────────────────────────
 let schedulerIntervalId = null;
+let lastDigestSentDateStr = null;
 
 export function startScheduler() {
   if (schedulerIntervalId) {
@@ -278,6 +384,19 @@ export function startScheduler() {
     console.log('[SCHEDULER] Scanning deadlines and overdue states...');
     await checkUpcomingDeadlines();
     await checkOverdueTasks();
+
+    // Check if it's 8:00 AM to send morning digest
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US');
+    const hour = now.getHours();
+    
+    if (hour === 8 && lastDigestSentDateStr !== dateStr) {
+      lastDigestSentDateStr = dateStr;
+      console.log(`[SCHEDULER] Triggering automated Daily Morning Digests for date: ${dateStr}...`);
+      sendAllDailyMorningDigests().catch(err => {
+        console.error('[SCHEDULER ERROR] Automated daily digest failed:', err.message);
+      });
+    }
   }, 60000);
 }
 

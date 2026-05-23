@@ -264,3 +264,207 @@ function mockAIAnalysis(prompt) {
 
   return result;
 }
+
+/**
+ * Pluggable AI Service Adapter for Daily Morning Digest
+ * Composes a personalized daily text summary in HTML format.
+ */
+export async function generateDailyMorningDigest(userName, tasks) {
+  const provider = (AI_PROVIDER || 'gemini').toLowerCase();
+  
+  const tasksSummary = tasks.map((t, i) => {
+    const dueStr = t.due_date ? new Date(t.due_date).toLocaleString('vi-VN') : 'Không có';
+    const prioNames = { high: 'Khẩn cấp', medium: 'Vừa', low: 'Thấp' };
+    const statusNames = { todo: 'Cần làm', in_progress: 'Đang làm', review: 'Đang review' };
+    return `${i + 1}. "${t.title}" - Trạng thái: ${statusNames[t.status] || t.status} - Ưu tiên: ${prioNames[t.priority] || t.priority} - Hạn chót: ${dueStr}`;
+  }).join('\n');
+
+  const systemContextPrompt = `
+Bạn là Trí Tuệ Nhân Tạo hỗ trợ công việc của hệ thống quản lý Synapse Collaboration.
+Hãy viết một bản tin chào buổi sáng (Daily Morning Digest) cá nhân hóa, thân thiện và đầy năng lượng bằng tiếng Việt gửi cho thành viên "${userName}".
+
+Danh sách các công việc chưa hoàn thành của "${userName}":
+${tasksSummary || 'Tuyệt vời! Bạn không có công việc nào chưa hoàn thành.'}
+
+Quy định viết bản tin:
+1. Chào hỏi "${userName}" một cách lịch sự, chúc một ngày mới tràn đầy năng lượng.
+2. Nếu có công việc đã trễ hạn (hạn chót trước thời điểm hiện tại), hãy liệt kê rõ ràng bằng icon 🚨 kèm theo lời nhắc nhở nhẹ nhàng nhưng nghiêm túc để họ cập nhật hoặc tập trung xử lý gấp.
+3. Liệt kê các công việc sắp đến hạn hôm nay hoặc trong 3 ngày tới bằng icon 📅 để họ chuẩn bị.
+4. Đưa ra 1-2 lời khuyên thông minh, gợi ý thứ tự ưu tiên làm việc hợp lý nhất cho cả ngày hôm nay dựa trên mức độ quan trọng và hạn chót.
+5. Định dạng đầu ra: Hãy sử dụng định dạng HTML cơ bản (các thẻ <strong>, <em>, <ul>, <li>, <br/>, <p>) để tin nhắn có cấu trúc đẹp mắt và chuyên nghiệp trên Microsoft Teams. KHÔNG thêm bất kỳ câu giải thích nào bên ngoài nội dung bản tin này.
+`;
+
+  try {
+    let result = null;
+    switch (provider) {
+      case 'openai':
+        result = await callOpenAIText(systemContextPrompt);
+        break;
+      case 'anthropic':
+      case 'claude':
+        result = await callClaudeText(systemContextPrompt);
+        break;
+      case 'ollama':
+        result = await callOllamaText(systemContextPrompt);
+        break;
+      case 'gemini':
+      default:
+        result = await callGeminiText(systemContextPrompt);
+        break;
+    }
+    if (result) return result;
+    return mockMorningDigest(userName, tasks);
+  } catch (err) {
+    console.error(`[AI SERVICE ERROR] Failed to generate morning digest from provider [${provider}]:`, err.message);
+    return mockMorningDigest(userName, tasks);
+  }
+}
+
+// ==========================================
+// INDIVIDUAL TEXT LLM ADAPTERS
+// ==========================================
+
+async function callGeminiText(prompt) {
+  if (!AI_API_KEY) {
+    console.warn('[AI SERVICE] AI_API_KEY is not configured for Gemini. Falling back to Mock digest.');
+    return null;
+  }
+
+  const model = AI_MODEL || 'gemini-1.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${AI_API_KEY}`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt }
+        ]
+      }
+    ]
+  };
+
+  const response = await axios.post(url, payload, { timeout: 12000 });
+  return response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+}
+
+async function callOpenAIText(prompt) {
+  if (!AI_API_KEY) return null;
+
+  const model = AI_MODEL || 'gpt-4o-mini';
+  const url = 'https://api.openai.com/v1/chat/completions';
+
+  const payload = {
+    model: model,
+    messages: [
+      { role: 'user', content: prompt }
+    ]
+  };
+
+  const response = await axios.post(url, payload, {
+    headers: {
+      'Authorization': `Bearer ${AI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    timeout: 12000
+  });
+
+  return response.data?.choices?.[0]?.message?.content;
+}
+
+async function callClaudeText(prompt) {
+  if (!AI_API_KEY) return null;
+
+  const model = AI_MODEL || 'claude-3-5-sonnet-20241022';
+  const url = 'https://api.anthropic.com/v1/messages';
+
+  const payload = {
+    model: model,
+    max_tokens: 1000,
+    messages: [
+      { role: 'user', content: prompt }
+    ]
+  };
+
+  const response = await axios.post(url, payload, {
+    headers: {
+      'x-api-key': AI_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    },
+    timeout: 12000
+  });
+
+  return response.data?.content?.[0]?.text;
+}
+
+async function callOllamaText(prompt) {
+  const endpoint = AI_ENDPOINT || 'http://localhost:11434';
+  const model = AI_MODEL || 'llama3';
+  const url = `${endpoint}/api/generate`;
+
+  const payload = {
+    model: model,
+    prompt: prompt,
+    stream: false
+  };
+
+  const response = await axios.post(url, payload, { timeout: 15000 });
+  return response.data?.response;
+}
+
+function mockMorningDigest(userName, tasks) {
+  console.log('[AI MOCK] Generating Mock Daily Morning Digest...');
+  const now = new Date();
+  
+  const overdueTasks = tasks.filter(t => t.due_date && new Date(t.due_date) < now);
+  const upcomingTasks = tasks.filter(t => t.due_date && new Date(t.due_date) >= now);
+  const noDeadlineTasks = tasks.filter(t => !t.due_date);
+
+  let digest = `<p>☀️ <strong>Chào ${userName}! Chúc bạn một ngày mới đầy năng lượng và làm việc hiệu quả.</strong></p>`;
+  
+  if (tasks.length === 0) {
+    digest += `<p>🎉 Thật tuyệt vời! Hôm nay bạn không có công việc nào chưa hoàn thành trên Synapse. Hãy tận hưởng một ngày thảnh thơi hoặc bắt đầu lên kế hoạch cho những dự án mới!</p>`;
+    return digest;
+  }
+
+  digest += `<p>Dưới đây là tóm tắt tiến độ công việc dành cho bạn:</p>`;
+
+  if (overdueTasks.length > 0) {
+    digest += `<p>🚨 <strong>Công việc ĐÃ QUÁ HẠN:</strong></p><ul>`;
+    overdueTasks.forEach(t => {
+      const dueStr = new Date(t.due_date).toLocaleDateString('vi-VN') + ' ' + new Date(t.due_date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      digest += `<li><strong>${t.title}</strong> (Hạn chót: <span style="color: #ef4444;">${dueStr}</span>)</li>`;
+    });
+    digest += `</ul><p><em>👉 Hãy ưu tiên xử lý các công việc quá hạn này ngay lập tức để không ảnh hưởng đến tiến độ chung của nhóm.</em></p>`;
+  }
+
+  if (upcomingTasks.length > 0) {
+    digest += `<p>📅 <strong>Công việc SẮP ĐẾN HẠN &amp; ĐANG THEO DÕI:</strong></p><ul>`;
+    upcomingTasks.forEach(t => {
+      const dueStr = new Date(t.due_date).toLocaleDateString('vi-VN') + ' ' + new Date(t.due_date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      digest += `<li><strong>${t.title}</strong> (Hạn: ${dueStr} | Ưu tiên: ${t.priority === 'high' ? 'Khẩn cấp' : (t.priority === 'low' ? 'Thấp' : 'Vừa')})</li>`;
+    });
+    digest += `</ul>`;
+  }
+
+  if (noDeadlineTasks.length > 0) {
+    digest += `<p>📋 <strong>Công việc chưa đặt hạn chót:</strong></p><ul>`;
+    noDeadlineTasks.forEach(t => {
+      digest += `<li><strong>${t.title}</strong></li>`;
+    });
+    digest += `</ul>`;
+  }
+
+  digest += `<hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 12px 0;" />`;
+  digest += `<p>💡 <strong>Lời khuyên từ Trợ lý Synapse AI:</strong></p>`;
+  if (overdueTasks.length > 0) {
+    digest += `<p>Hôm nay bạn nên dành buổi sáng để tập trung dứt điểm việc <strong>"${overdueTasks[0].title}"</strong>. Sau đó mới xử lý các việc tiếp theo để giảm tải áp lực deadline.</p>`;
+  } else if (upcomingTasks.length > 0) {
+    digest += `<p>Các đầu việc sắp tới của bạn đều nằm trong tầm kiểm soát. Hãy bắt đầu với việc có độ ưu tiên cao nhất là <strong>"${upcomingTasks[0].title}"</strong> trước nhé!</p>`;
+  } else {
+    digest += `<p>Hãy xem xét đặt hạn chót cho các công việc chưa có deadline để dễ dàng theo dõi tiến độ hơn.</p>`;
+  }
+
+  return digest;
+}
+

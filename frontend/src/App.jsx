@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, Bell, Check, Trash2, BellOff } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3 } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
@@ -19,6 +19,12 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false); // Turn off simulation by default for DB sync stability
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'mine'
+  
+  const [activeTab, setActiveTab] = useState('board'); // 'board' | 'analytics'
+  const [digestContentModal, setDigestContentModal] = useState(null);
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [digestLoading, setDigestLoading] = useState(false);
 
   const [notifications, setNotifications] = useState([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -503,6 +509,345 @@ export default function App() {
   // ───────────────────────────────────────────────
   // 1. LOADING SCREEN
   // ───────────────────────────────────────────────
+
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const data = await api.getTasksAnalytics();
+      setAnalyticsData(data);
+    } catch (err) {
+      console.error('Không thể lấy dữ liệu thống kê:', err);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  const handleTriggerDailyDigest = async () => {
+    setDigestLoading(true);
+    try {
+      console.log('[DAILY DIGEST UI] Kích hoạt gửi bản tin sáng...');
+      const res = await api.triggerDailyDigest();
+      setDigestContentModal(res.digestContent);
+      const notifs = await api.getNotifications();
+      setNotifications(notifs);
+    } catch (err) {
+      console.error('[DAILY DIGEST UI ERROR] Không thể kích hoạt bản tin:', err);
+      alert('Không thể tạo và gửi bản tin sáng. Chi tiết: ' + err.message);
+    } finally {
+      setDigestLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoggedIn && activeTab === 'analytics') {
+      fetchAnalytics();
+    }
+  }, [activeTab, isLoggedIn]);
+
+
+    const renderAnalytics = () => {
+    if (analyticsLoading || !analyticsData) {
+      return (
+        <div className="glass-panel" style={{ padding: '60px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', minHeight: '400px' }}>
+          <div className="loader" style={{ border: '3px solid rgba(255,255,255,0.05)', borderRadius: '50%', borderTop: '3px solid #8b5cf6', width: '45px', height: '45px', animation: 'spin 1s linear infinite' }}></div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', fontFamily: 'var(--font-title)', fontWeight: '500' }}>
+            Đang tổng hợp dữ liệu hiệu suất và phân tích AI...
+          </p>
+        </div>
+      );
+    }
+
+    const {
+      totalTasks,
+      statusCounts,
+      prioCounts,
+      onTimeRate,
+      avgLeadTimeHrs,
+      teamAnalytics,
+      tagsAnalytics,
+      recentOverdueLogs
+    } = analyticsData;
+
+    // SVG Progress ring math
+    const radius = 52;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (onTimeRate / 100) * circumference;
+
+    return (
+      <div className="analytics-dashboard">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.5px', color: '#fff', margin: 0 }}>
+            Hiệu Suất & Thống Kê AI
+          </h2>
+          <button
+            onClick={handleTriggerDailyDigest}
+            disabled={digestLoading}
+            className="user-switcher-wrap"
+            style={{
+              padding: '8px 16px',
+              cursor: 'pointer',
+              color: '#8b5cf6',
+              borderColor: 'rgba(139, 92, 246, 0.3)',
+              background: 'rgba(139, 92, 246, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Sparkles size={13} style={{ color: '#8b5cf6' }} />
+            <span>{digestLoading ? 'Đang tạo...' : '☀️ Gửi bản tin sáng AI (Teams)'}</span>
+          </button>
+        </div>
+        {/* KPI Cards Row */}
+        <div className="kpi-grid">
+          {/* Card 1: Total */}
+          <div className="kpi-card glass-panel">
+            <div className="kpi-icon-box total">
+              <Layers size={20} />
+            </div>
+            <div className="kpi-meta">
+              <span className="kpi-title">Tổng công việc</span>
+              <span className="kpi-value">{totalTasks}</span>
+            </div>
+          </div>
+
+          {/* Card 2: Completed */}
+          <div className="kpi-card glass-panel">
+            <div className="kpi-icon-box ontime">
+              <Check size={20} />
+            </div>
+            <div className="kpi-meta">
+              <span className="kpi-title">Hoàn thành</span>
+              <span className="kpi-value">{statusCounts.done}</span>
+            </div>
+          </div>
+
+          {/* Card 3: On-Time Rate */}
+          <div className="kpi-card glass-panel" title="Tỷ lệ công việc hoàn thành trước hoặc đúng hạn chót">
+            <div className={`kpi-icon-box ${onTimeRate >= 80 ? 'ontime' : 'pending'}`}>
+              <Sparkles size={20} />
+            </div>
+            <div className="kpi-meta">
+              <span className="kpi-title">Tỷ lệ đúng hạn</span>
+              <span className="kpi-value" style={{ color: onTimeRate >= 80 ? '#34d399' : '#fbbf24' }}>{onTimeRate}%</span>
+            </div>
+          </div>
+
+          {/* Card 4: Average Lead Time */}
+          <div className="kpi-card glass-panel" title="Thời gian trung bình từ khi tạo đến khi hoàn thành công việc">
+            <div className="kpi-icon-box leadtime">
+              <RefreshCw size={20} />
+            </div>
+            <div className="kpi-meta">
+              <span className="kpi-title">Lead Time trung bình</span>
+              <span className="kpi-value">{avgLeadTimeHrs}h</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Charts Grid */}
+        <div className="charts-grid">
+          {/* Workload stacked bar chart */}
+          <div className="chart-panel glass-panel">
+            <h3 className="chart-panel-title">
+              <Users size={16} style={{ color: '#8b5cf6' }} />
+              Tải Công Việc & Tiến Độ Nhóm (Team Workload)
+            </h3>
+            <div className="team-workload-list">
+              {teamAnalytics.map(member => {
+                const total = member.stats.total || 1;
+                const todoPct = (member.stats.todo / total) * 100;
+                const progressPct = (member.stats.in_progress / total) * 100;
+                const reviewPct = (member.stats.review / total) * 100;
+                const donePct = (member.stats.done / total) * 100;
+
+                return (
+                  <div key={member.userId} className="team-member-row">
+                    <div className="team-member-info">
+                      <img src={member.avatar} alt={member.name} className="team-member-avatar" />
+                      <div>
+                        <div className="team-member-name">{member.name}</div>
+                        <div className="team-member-role">{member.role}</div>
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                      <div className="stacked-bar-container">
+                        {member.stats.todo > 0 && <div className="stacked-bar-segment todo" style={{ width: `${todoPct}%` }} title={`Cần làm: ${member.stats.todo}`} />}
+                        {member.stats.in_progress > 0 && <div className="stacked-bar-segment in_progress" style={{ width: `${progressPct}%` }} title={`Đang làm: ${member.stats.in_progress}`} />}
+                        {member.stats.review > 0 && <div className="stacked-bar-segment review" style={{ width: `${reviewPct}%` }} title={`Review: ${member.stats.review}`} />}
+                        {member.stats.done > 0 && <div className="stacked-bar-segment done" style={{ width: `${donePct}%` }} title={`Hoàn thành: ${member.stats.done}`} />}
+                      </div>
+                    </div>
+
+                    <div className="workload-numbers">
+                      <span className="workload-total">{member.stats.total}</span> việc 
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                        ({member.stats.done} xong)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Chart Legend */}
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="status-color-dot todo" /> Cần làm
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="status-color-dot in_progress" /> Đang làm
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="status-color-dot review" /> Đang review
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="status-color-dot done" /> Hoàn thành
+              </div>
+            </div>
+          </div>
+
+          {/* Radial Gauge for On-Time Rate */}
+          <div className="chart-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <h3 className="chart-panel-title" style={{ width: '100%' }}>
+              <Sparkles size={16} style={{ color: '#10b981' }} />
+              Chất Lượng Đúng Hạn
+            </h3>
+            
+            <div className="progress-ring-box">
+              <svg width="128" height="128">
+                <defs>
+                  <linearGradient id="gradient-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#06b6d4" />
+                  </linearGradient>
+                </defs>
+                {/* Background Ring */}
+                <circle
+                  stroke="rgba(255, 255, 255, 0.04)"
+                  fill="transparent"
+                  strokeWidth="8"
+                  r={radius}
+                  cx="64"
+                  cy="64"
+                />
+                {/* Progress Ring */}
+                <circle
+                  className="progress-ring-circle"
+                  stroke="url(#gradient-glow)"
+                  fill="transparent"
+                  strokeWidth="8"
+                  strokeDasharray={`${circumference} ${circumference}`}
+                  style={{ strokeDashoffset }}
+                  strokeLinecap="round"
+                  r={radius}
+                  cx="64"
+                  cy="64"
+                />
+              </svg>
+              <div className="progress-ring-text">{onTimeRate}%</div>
+            </div>
+            
+            <div style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+              <strong style={{ color: onTimeRate >= 80 ? 'var(--success)' : 'var(--warning)' }}>
+                {onTimeRate >= 80 ? '🔥 Rất tuyệt vời!' : '⚠️ Cần cải thiện'}
+              </strong>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Tỷ lệ hoàn thành công việc trước hoặc đúng hạn chót.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 3: Grid Row 2 */}
+        <div className="charts-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+          {/* Priorities breakdown */}
+          <div className="chart-panel glass-panel">
+            <h3 className="chart-panel-title">
+              <ShieldAlert size={16} style={{ color: '#ef4444' }} />
+              Mức Độ Ưu Tiên
+            </h3>
+            <div className="priority-breakdown-box">
+              {[
+                { key: 'high', label: 'Khẩn cấp', count: prioCounts.high, max: totalTasks || 1 },
+                { key: 'medium', label: 'Vừa', count: prioCounts.medium, max: totalTasks || 1 },
+                { key: 'low', label: 'Thấp', count: prioCounts.low, max: totalTasks || 1 }
+              ].map(item => {
+                const pct = (item.count / item.max) * 100;
+                return (
+                  <div key={item.key} className="priority-bar-row">
+                    <div className="priority-bar-label">
+                      <span>{item.label}</span>
+                      <strong>{item.count}</strong>
+                    </div>
+                    <div className="priority-bar-wrap">
+                      <div className={`priority-bar-fill ${item.key}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Status Breakdown & Popular Tags */}
+          <div className="chart-panel glass-panel">
+            <h3 className="chart-panel-title">
+              <Tag size={16} style={{ color: '#06b6d4' }} />
+              Nhãn Dán Phổ Biến (Tags)
+            </h3>
+            {tagsAnalytics.length === 0 ? (
+              <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                Chưa có nhãn dán nào được sử dụng.
+              </div>
+            ) : (
+              <div className="tags-cloud">
+                {tagsAnalytics.map(t => (
+                  <div key={t.tag} className="tag-cloud-item">
+                    <span>#{t.tag}</span>
+                    <span className="tag-cloud-count">{t.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Overdue Feeds list */}
+          <div className="chart-panel glass-panel">
+            <h3 className="chart-panel-title">
+              <AlertTriangle size={16} style={{ color: 'var(--danger)' }} />
+              Cảnh Báo Quá Hạn Gần Đây
+            </h3>
+            {recentOverdueLogs.length === 0 ? (
+              <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--success)', fontStyle: 'italic', gap: '6px' }}>
+                <Check size={14} /> Không có cảnh báo quá hạn nào!
+              </div>
+            ) : (
+              <div className="recent-overdue-list">
+                {recentOverdueLogs.map(log => {
+                  const formattedDue = new Date(log.due_date).toLocaleDateString('vi-VN');
+                  return (
+                    <div key={log.id} className="recent-overdue-item">
+                      <AlertTriangle size={14} style={{ color: 'var(--danger)', flexShrink: 0 }} />
+                      <div className="recent-overdue-title" title={log.task_title}>
+                        {log.task_title}
+                      </div>
+                      <div className="recent-overdue-meta">
+                        <span className="recent-overdue-date">{formattedDue}</span>
+                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{log.assignees || 'Chưa gán'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading && !isLoggedIn) {
     return (
       <div className="login-screen" style={{ background: '#09090b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#fafafa' }}>
@@ -634,6 +979,51 @@ export default function App() {
           <span>SYNAPSE</span>
           <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', color: '#a78bfa', marginLeft: '6px', fontWeight: '500' }}>COLLAB v1.0</span>
         </div>
+
+      {/* Navigation Tabs */}
+      <div style={{ display: 'flex', gap: '8px', background: 'rgba(255, 255, 255, 0.03)', padding: '4px', borderRadius: '8px', border: 'var(--glass-border)', marginLeft: '16px' }}>
+        <button
+          onClick={() => setActiveTab('board')}
+          style={{
+            padding: '6px 16px',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeTab === 'board' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'board' ? '#fff' : 'var(--text-secondary)',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Layers size={13} />
+          Bảng Công Việc
+        </button>
+        <button
+          onClick={() => setActiveTab('analytics')}
+          style={{
+            padding: '6px 16px',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeTab === 'analytics' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'analytics' ? '#fff' : 'var(--text-secondary)',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <BarChart3 size={13} style={{ color: '#a78bfa' }} />
+          Thống Kê & AI
+        </button>
+      </div>
+
 
         {/* Header Actions */}
         <div className="header-actions">
@@ -803,145 +1193,118 @@ export default function App() {
         </div>
       </header>
 
-      {/* Interactive NLP Smart Input Area */}
-      <section className="glass-panel" style={{ padding: isSmartInputCollapsed ? '14px 24px' : '24px', display: 'flex', flexDirection: 'column', gap: isSmartInputCollapsed ? '0px' : '14px', transition: 'all 0.3s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Sparkles size={16} style={{ color: '#c084fc' }} />
-            <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '17px', fontWeight: '600' }}>Tạo công việc siêu tốc bằng Trí Tuệ Nhân Tạo</h2>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {activeTab === 'analytics' ? (
+        renderAnalytics()
+      ) : (
+        <>
+          {/* Interactive NLP Smart Input Area */}
+          <section className="glass-panel" style={{ padding: isSmartInputCollapsed ? '14px 24px' : '24px', display: 'flex', flexDirection: 'column', gap: isSmartInputCollapsed ? '0px' : '14px', transition: 'all 0.3s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={16} style={{ color: '#c084fc' }} />
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '17px', fontWeight: '600' }}>Tạo công việc siêu tốc bằng Trí Tuệ Nhân Tạo</h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {!isSmartInputCollapsed && (
+                  <span className="smart-input-tip" style={{ fontSize: '12px', color: '#71717a' }}>
+                    💡 Gõ <span style={{ color: '#c084fc', fontWeight: 'bold' }}>@tên</span> để gán người, <span style={{ color: '#ef4444', fontWeight: 'bold' }}>#cao/#trungbinh/#thap</span> để đặt ưu tiên, <span style={{ color: '#06b6d4', fontWeight: 'bold' }}>ngày mai/thứ sáu</span> để đặt hạn chót.
+                  </span>
+                )}
+                <button
+                  onClick={() => setIsSmartInputCollapsed(!isSmartInputCollapsed)}
+                  className="column-toggle-btn"
+                  style={{ padding: '4px', borderRadius: '6px' }}
+                  title={isSmartInputCollapsed ? 'Mở rộng bảng nhập' : 'Thu nhỏ bảng nhập'}
+                >
+                  {isSmartInputCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                </button>
+              </div>
+            </div>
+
             {!isSmartInputCollapsed && (
-              <span className="smart-input-tip" style={{ fontSize: '12px', color: '#71717a' }}>
-                💡 Gõ <span style={{ color: '#c084fc', fontWeight: 'bold' }}>@tên</span> để gán người, <span style={{ color: '#ef4444', fontWeight: 'bold' }}>#cao/#trungbinh/#thap</span> để đặt ưu tiên, <span style={{ color: '#06b6d4', fontWeight: 'bold' }}>ngày mai/thứ sáu</span> để đặt hạn.
-              </span>
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <SmartInput onAddTask={handleAddTask} activeUser={activeUser} />
+              </div>
             )}
-            <button
-              onClick={() => setIsSmartInputCollapsed(!isSmartInputCollapsed)}
-              className="column-toggle-btn"
-              style={{ padding: '4px', borderRadius: '6px' }}
-              title={isSmartInputCollapsed ? 'Mở rộng bảng nhập' : 'Thu nhỏ bảng nhập'}
-            >
-              {isSmartInputCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
-            </button>
+          </section>
+
+          {/* Dashboard Filter and Board Title */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+            <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.5px' }}>
+              Bảng Tiến độ Công việc
+            </h2>
+
+            {/* Filter Tabs */}
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: 'var(--glass-border)', padding: '3px', borderRadius: '8px', gap: '4px' }}>
+              <button
+                onClick={() => setFilterMode('all')}
+                style={{
+                  background: filterMode === 'all' ? 'var(--primary)' : 'none',
+                  border: 'none',
+                  color: filterMode === 'all' ? 'white' : 'var(--text-secondary)',
+                  fontSize: '12px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: filterMode === 'all' ? '600' : 'normal',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Layers size={12} />
+                Tất cả công việc
+              </button>
+              <button
+                onClick={() => setFilterMode('mine')}
+                style={{
+                  background: filterMode === 'mine' ? 'var(--primary)' : 'none',
+                  border: 'none',
+                  color: filterMode === 'mine' ? 'white' : 'var(--text-secondary)',
+                  fontSize: '12px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: filterMode === 'mine' ? '600' : 'normal',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Filter size={12} />
+                Chỉ việc của tôi
+              </button>
+            </div>
           </div>
-        </div>
 
-        {!isSmartInputCollapsed && (
-          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <SmartInput onAddTask={handleAddTask} activeUser={activeUser} />
-          </div>
-        )}
-      </section>
+          {/* Main Kanban & Sidebar Grid */}
+          <main className={`dashboard-grid ${isSidebarOpen ? 'sidebar-visible' : 'sidebar-hidden'}`}>
+            {/* Board Canvas */}
+            <section>
+              <KanbanBoard
+                tasks={filteredTasks}
+                onUpdateTask={handleUpdateTask}
+                onDeleteTask={handleDeleteTask}
+                onOpenTaskEditor={setSelectedTask}
+                teamMembers={teamMembers}
+              />
+            </section>
 
-      {/* Admin Session Inspector panel */}
-      <section className="glass-panel" style={{ padding: '12px 24px', border: '1px solid rgba(239, 68, 68, 0.15)', background: 'rgba(239, 68, 68, 0.02)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fca5a5' }}>
-          <AlertTriangle size={15} />
-          <span style={{ fontSize: '12px', fontWeight: '600' }}>Hệ Thống Thu Hồi Phiên Trực Tiếp (Admin Session Invalidation Panel)</span>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {teamMembers.map(member => (
-            <button
-              key={member.id}
-              onClick={() => handleAdminRevokeSession(member.id)}
-              style={{
-                padding: '4px 10px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
-                borderRadius: '6px',
-                fontSize: '10px',
-                color: '#fca5a5',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
-            >
-              <Key size={10} />
-              Vô hiệu {member.name.split(' ').pop()}
-            </button>
-          ))}
-        </div>
-      </section>
+            {/* Team Collaboration Sidebar Container */}
+            <aside className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
+              <Sidebar
+                tasks={tasks}
+                logs={logs}
+                onUpdateTask={handleUpdateTask}
+                teamMembers={teamMembers}
+              />
+            </aside>
+          </main>
+        </>
+      )}
 
-      {/* Dashboard Filter and Board Title */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-        <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.5px' }}>
-          Bảng Tiến độ Công việc
-        </h2>
-
-        {/* Filter Tabs */}
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: 'var(--glass-border)', padding: '3px', borderRadius: '8px', gap: '4px' }}>
-          <button
-            onClick={() => setFilterMode('all')}
-            style={{
-              background: filterMode === 'all' ? 'var(--primary)' : 'none',
-              border: 'none',
-              color: filterMode === 'all' ? 'white' : 'var(--text-secondary)',
-              fontSize: '12px',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: filterMode === 'all' ? '600' : 'normal',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Layers size={12} />
-            Tất cả công việc
-          </button>
-          <button
-            onClick={() => setFilterMode('mine')}
-            style={{
-              background: filterMode === 'mine' ? 'var(--primary)' : 'none',
-              border: 'none',
-              color: filterMode === 'mine' ? 'white' : 'var(--text-secondary)',
-              fontSize: '12px',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: filterMode === 'mine' ? '600' : 'normal',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Filter size={12} />
-            Chỉ việc của tôi
-          </button>
-        </div>
-      </div>
-
-      {/* Main Kanban & Sidebar Grid */}
-      <main className={`dashboard-grid ${isSidebarOpen ? 'sidebar-visible' : 'sidebar-hidden'}`}>
-        {/* Board Canvas */}
-        <section>
-          <KanbanBoard
-            tasks={filteredTasks}
-            onUpdateTask={handleUpdateTask}
-            onDeleteTask={handleDeleteTask}
-            onOpenTaskEditor={setSelectedTask}
-            teamMembers={teamMembers}
-          />
-        </section>
-
-        {/* Team Collaboration Sidebar Container */}
-        <aside className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
-          <Sidebar
-            tasks={tasks}
-            logs={logs}
-            onUpdateTask={handleUpdateTask}
-            teamMembers={teamMembers}
-          />
-        </aside>
-      </main>
 
       {/* Task Details Editor Modal */}
       {selectedTask && (
@@ -952,6 +1315,35 @@ export default function App() {
           activeUser={activeUser}
           teamMembers={teamMembers}
         />
+      )}
+
+      {/* Glassmorphic AI Daily Digest Modal */}
+      {digestContentModal && (
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="glass-panel fade-in" style={{ width: '100%', maxWidth: '600px', padding: '30px', position: 'relative', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <button 
+              onClick={() => setDigestContentModal(null)} 
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+            >
+              <X size={18} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Sparkles size={22} style={{ color: '#a78bfa' }} />
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#fff', margin: 0, fontFamily: 'var(--font-title)' }}>Bản tin chào buổi sáng AI</h3>
+            </div>
+            <div 
+              style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '8px', fontSize: '13.5px', lineHeight: 1.6, color: '#e4e4e7' }}
+              dangerouslySetInnerHTML={{ __html: digestContentModal }}
+            />
+            <button 
+              onClick={() => setDigestContentModal(null)}
+              className="user-switcher-wrap"
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', marginTop: '10px', background: 'var(--primary)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' }}
+            >
+              Đóng Bản Tin
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Footer */}

@@ -181,5 +181,11 @@ export const api = {
   }),
   deleteNotification: (notificationId) => apiFetch(`/api/notifications/${notificationId}`, {
     method: 'DELETE'
-  })
+  }),
+  
+  // Daily AI Morning Digest & Analytics
+  triggerDailyDigest: () => apiFetch('/api/sync/trigger-daily-digest', {
+    method: 'POST'
+  }),
+  getTasksAnalytics: () => apiFetch('/api/tasks/analytics')
 };

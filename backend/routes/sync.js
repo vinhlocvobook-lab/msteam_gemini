@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import pool from '../db.js';
 import { getValidMicrosoftToken, authenticateAppToken } from '../auth.js';
 import { analyzeTeamsMessage } from '../services/aiService.js';
+import { sendDailyMorningDigestForUser } from '../services/scheduler.js';
 
 const router = express.Router();
 
@@ -506,6 +507,27 @@ router.post('/sync/renew-subscriptions', async (req, res) => {
   } catch (err) {
     console.error('[RENEW API ERROR] Webhook renewal flow failed:', err.message);
     res.status(500).json({ error: 'Lỗi gia hạn subscription.' });
+  }
+});
+
+// ───────────────────────────────────────────────
+// API: TRIGGER DAILY MORNING DIGEST MANUALLY
+// ───────────────────────────────────────────────
+router.post('/sync/trigger-daily-digest', authenticateAppToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log(`[DAILY DIGEST API] Manual digest trigger received for user: ${userId}`);
+    
+    const result = await sendDailyMorningDigestForUser(userId);
+    
+    res.json({
+      message: 'Gửi bản tin sáng AI thành công!',
+      deliveredCount: result.deliveredCount,
+      digestContent: result.digestContent
+    });
+  } catch (err) {
+    console.error('[DAILY DIGEST API ERROR] Failed to send manual digest:', err.message);
+    res.status(500).json({ error: `Không thể tạo và gửi bản tin sáng. Chi tiết: ${err.message}` });
   }
 });
 
