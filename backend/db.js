@@ -227,6 +227,55 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 10.2.1. Create calendar_weekends table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS calendar_weekends (
+        day_index INT PRIMARY KEY
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 10.2.2. Create calendar_holidays table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS calendar_holidays (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        month INT NULL,
+        day INT NULL,
+        date_str VARCHAR(50) NULL,
+        color VARCHAR(50) DEFAULT '#f43f5e'
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Seed calendar_weekends with default [0, 6] (Sunday, Saturday) if empty
+    const [weekendCount] = await connection.query('SELECT COUNT(*) as count FROM calendar_weekends');
+    if (weekendCount[0].count === 0) {
+      console.log('[DATABASE] Seeding default weekends...');
+      await connection.query('INSERT INTO calendar_weekends (day_index) VALUES (0), (6)');
+    }
+
+    // Seed calendar_holidays with default Vietnamese holidays if empty
+    const [holidayCount] = await connection.query('SELECT COUNT(*) as count FROM calendar_holidays');
+    if (holidayCount[0].count === 0) {
+      console.log('[DATABASE] Seeding default Vietnamese holidays...');
+      const defaultHolidays = [
+        ['h1', 'Tết Dương Lịch', 'solar', 1, 1, null, '#f43f5e'],
+        ['h2', 'Ngày Chiến Thắng', 'solar', 4, 30, null, '#f43f5e'],
+        ['h3', 'Ngày Quốc tế Lao động', 'solar', 5, 1, null, '#f43f5e'],
+        ['h4', 'Ngày Quốc khánh', 'solar', 9, 2, null, '#f43f5e'],
+        ['h5', 'Tết Nguyên Đán (Mùng 1)', 'lunar', 1, 1, null, '#e11d48'],
+        ['h6', 'Tết Nguyên Đán (Mùng 2)', 'lunar', 1, 2, null, '#e11d48'],
+        ['h7', 'Tết Nguyên Đán (Mùng 3)', 'lunar', 1, 3, null, '#e11d48'],
+        ['h8', 'Giỗ Tổ Hùng Vương', 'lunar', 3, 10, null, '#d97706']
+      ];
+      for (const h of defaultHolidays) {
+        await connection.query(
+          'INSERT INTO calendar_holidays (id, name, type, month, day, date_str, color) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          h
+        );
+      }
+    }
+
     // 10.3. Migration: Add columns to tasks if not exists
     const [columns] = await connection.query("SHOW COLUMNS FROM tasks");
     const colNames = columns.map(c => c.Field);

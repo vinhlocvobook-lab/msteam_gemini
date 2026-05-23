@@ -187,5 +187,20 @@ export const api = {
   triggerDailyDigest: () => apiFetch('/api/sync/trigger-daily-digest', {
     method: 'POST'
   }),
-  getTasksAnalytics: () => apiFetch('/api/tasks/analytics')
+  getTasksAnalytics: () => apiFetch('/api/tasks/analytics'),
+
+  // Calendar Settings & Holidays
+  getCalendarSettings: () => apiFetch('/api/calendar/settings'),
+  updateWeekendDays: (weekendDays) => apiFetch('/api/calendar/weekends', {
+    method: 'POST',
+    body: JSON.stringify({ weekendDays })
+  }),
+  createHoliday: (holidayData) => apiFetch('/api/calendar/holidays', {
+    method: 'POST',
+    body: JSON.stringify(holidayData)
+  }),
+  deleteHoliday: (holidayId) => apiFetch(`/api/calendar/holidays/${holidayId}`, {
+    method: 'DELETE'
+  })
 };
+

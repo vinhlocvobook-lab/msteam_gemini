@@ -12,6 +12,7 @@ import taskRoutes from './routes/tasks.js';
 import syncRoutes from './routes/sync.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
+import calendarRoutes from './routes/calendar.js';
 
 dotenv.config();
 
@@ -58,6 +59,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api', syncRoutes); // Matches /api/webhooks/teams, /api/sync/poll-teams, etc.
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/calendar', calendarRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

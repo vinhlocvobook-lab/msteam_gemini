@@ -1,0 +1,6 @@
+# Local scratch scripts
+scratch/
+
+# OS files
+.DS_Store
+Thumbs.db

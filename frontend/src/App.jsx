@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3, Calendar, ChevronLeft, ChevronRight, Clock, CalendarDays } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, User, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3, Calendar, ChevronLeft, ChevronRight, Clock, CalendarDays, Edit2, Settings } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
 import TaskEditorModal from './components/TaskEditorModal';
-import { USERS, parseTaskText } from './utils/nlpParser';
+import { USERS, PRIORITIES, parseTaskText } from './utils/nlpParser';
 import { api, setAccessToken, registerAuthChangeCallback, BACKEND_BASE_URL } from './utils/api';
+import solarLunar from 'solarlunar';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -20,9 +21,34 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false); // Turn off simulation by default for DB sync stability
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'mine'
   
-  const [activeTab, setActiveTab] = useState('board'); // 'board' | 'analytics' | 'calendar'
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('synapse_active_tab') || 'board';
+  }); // 'board' | 'analytics' | 'calendar'
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedTimeRange, setSelectedTimeRange] = useState('today');
+  const [customSelectedDate, setCustomSelectedDate] = useState('');
+  const [customRangeStart, setCustomRangeStart] = useState('');
+  const [customRangeEnd, setCustomRangeEnd] = useState('');
+  const [isCustomDateSectionCollapsed, setIsCustomDateSectionCollapsed] = useState(() => {
+    return localStorage.getItem('synapse_custom_date_collapsed') === 'true';
+  });
+  const [isTimeframePanelMinimized, setIsTimeframePanelMinimized] = useState(() => {
+    return localStorage.getItem('synapse_timeframe_minimized') === 'true';
+  });
+  const [isCalendarGridMinimized, setIsCalendarGridMinimized] = useState(() => {
+    return localStorage.getItem('synapse_calendar_grid_minimized') === 'true';
+  });
+  const [calendarViewMode, setCalendarViewMode] = useState(() => {
+    return localStorage.getItem('synapse_calendar_view_mode') || 'single_month';
+  });
+  const [infiniteScrollMinOffset, setInfiniteScrollMinOffset] = useState(-2);
+  const [infiniteScrollMaxOffset, setInfiniteScrollMaxOffset] = useState(2);
+  const [calendarListGroupingMode, setCalendarListGroupingMode] = useState(() => {
+    return localStorage.getItem('synapse_calendar_list_grouping_mode') || 'priority';
+  });
+  const [calendarDraggedTaskId, setCalendarDraggedTaskId] = useState(null);
+  const [calendarDragOverColumnId, setCalendarDragOverColumnId] = useState(null);
+  const [calendarActivePopup, setCalendarActivePopup] = useState(null);
   const [digestContentModal, setDigestContentModal] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -34,6 +60,16 @@ export default function App() {
 
   const simulationIntervalRef = useRef(null);
   const microsoftPopupRef = useRef(null);
+
+  const [weekendDays, setWeekendDays] = useState([0, 6]);
+  const [holidays, setHolidays] = useState([]);
+  const [isHolidaySettingsOpen, setIsHolidaySettingsOpen] = useState(false);
+  const [newHolidayName, setNewHolidayName] = useState('');
+  const [newHolidayType, setNewHolidayType] = useState('solar');
+  const [newHolidayMonth, setNewHolidayMonth] = useState(1);
+  const [newHolidayDay, setNewHolidayDay] = useState(1);
+  const [newHolidayDateStr, setNewHolidayDateStr] = useState('');
+  const [newHolidayColor, setNewHolidayColor] = useState('#f43f5e');
 
   // Persisted collapse state for AI Smart Input
   const [isSmartInputCollapsed, setIsSmartInputCollapsed] = useState(() => {
@@ -161,6 +197,27 @@ export default function App() {
     }
   }, [isLoggedIn]);
 
+  // Load calendar settings on login
+  const fetchCalendarSettings = async () => {
+    if (!isLoggedIn) return;
+    try {
+      const settings = await api.getCalendarSettings();
+      if (settings) {
+        if (settings.weekendDays) setWeekendDays(settings.weekendDays);
+        if (settings.holidays) setHolidays(settings.holidays);
+      }
+    } catch (err) {
+      console.error('[SYNC ERROR] Failed loading calendar settings:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchCalendarSettings();
+    }
+  }, [isLoggedIn]);
+
+
   // Persist UI collapses
   useEffect(() => {
     localStorage.setItem('synapse_smart_input_collapsed', isSmartInputCollapsed);
@@ -169,6 +226,30 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('synapse_sidebar_open', isSidebarOpen);
   }, [isSidebarOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_custom_date_collapsed', isCustomDateSectionCollapsed);
+  }, [isCustomDateSectionCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_timeframe_minimized', isTimeframePanelMinimized);
+  }, [isTimeframePanelMinimized]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_calendar_grid_minimized', isCalendarGridMinimized);
+  }, [isCalendarGridMinimized]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_calendar_view_mode', calendarViewMode);
+  }, [calendarViewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_calendar_list_grouping_mode', calendarListGroupingMode);
+  }, [calendarListGroupingMode]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_active_tab', activeTab);
+  }, [activeTab]);
 
   // ───────────────────────────────────────────────
   // LOGIN METHODS
@@ -606,84 +687,581 @@ export default function App() {
           const { start, end } = getYearRange(1);
           return tDate >= start && tDate <= end;
         }
+        case 'custom_date': {
+          if (!customSelectedDate) return false;
+          const [yr, mn, dy] = customSelectedDate.split('-').map(Number);
+          const targetDate = new Date(yr, mn - 1, dy);
+          return isSameDay(tDate, targetDate);
+        }
+        case 'custom_range': {
+          if (!customRangeStart || !customRangeEnd) return false;
+          const [sYr, sMn, sDy] = customRangeStart.split('-').map(Number);
+          const [eYr, eMn, eDy] = customRangeEnd.split('-').map(Number);
+          const start = new Date(sYr, sMn - 1, sDy);
+          const end = new Date(eYr, eMn - 1, eDy, 23, 59, 59, 999);
+          return tDate >= start && tDate <= end;
+        }
         default:
           return false;
       }
     });
   };
 
+  const isDateInTimeRange = (cellDate, rangeKey) => {
+    const today = new Date();
+    const cellTime = cellDate.getTime();
+    switch (rangeKey) {
+      case 'yesterday': {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        return isSameDay(cellDate, yesterday);
+      }
+      case 'today':
+        return isSameDay(cellDate, today);
+      case 'tomorrow': {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return isSameDay(cellDate, tomorrow);
+      }
+      case 'last_week': {
+        const { start, end } = getWeekRange(-1);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'this_week': {
+        const { start, end } = getWeekRange(0);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'next_week': {
+        const { start, end } = getWeekRange(1);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'last_month': {
+        const { start, end } = getMonthRange(-1);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'this_month': {
+        const { start, end } = getMonthRange(0);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'next_month': {
+        const { start, end } = getMonthRange(1);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'last_year': {
+        const { start, end } = getYearRange(-1);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'this_year': {
+        const { start, end } = getYearRange(0);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'next_year': {
+        const { start, end } = getYearRange(1);
+        return cellTime >= start.getTime() && cellTime <= end.getTime();
+      }
+      case 'custom_date': {
+        if (!customSelectedDate) return false;
+        const [yr, mn, dy] = customSelectedDate.split('-').map(Number);
+        const targetDate = new Date(yr, mn - 1, dy);
+        return isSameDay(cellDate, targetDate);
+      }
+      case 'custom_range': {
+        if (!customRangeStart || !customRangeEnd) return false;
+        const [sYr, sMn, sDy] = customRangeStart.split('-').map(Number);
+        const [eYr, eMn, eDy] = customRangeEnd.split('-').map(Number);
+        const start = new Date(sYr, sMn - 1, sDy);
+        const end = new Date(eYr, eMn - 1, eDy, 23, 59, 59, 999);
+        return cellDate >= start && cellDate <= end;
+      }
+      default:
+        return false;
+    }
+  };
+
+  const handleCustomDateChange = (dateString) => {
+    setCustomSelectedDate(dateString);
+    if (dateString) {
+      setSelectedTimeRange('custom_date');
+      const [yr, mn, dy] = dateString.split('-').map(Number);
+      setCalendarDate(new Date(yr, mn - 1, dy));
+      
+      // Smooth scroll down to the task list below the calendar
+      setTimeout(() => {
+        document.getElementById('filtered-tasks-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
+  const handleCustomRangeChange = (type, val) => {
+    let startVal = customRangeStart;
+    let endVal = customRangeEnd;
+    if (type === 'start') {
+      setCustomRangeStart(val);
+      startVal = val;
+    } else {
+      setCustomRangeEnd(val);
+      endVal = val;
+    }
+
+    if (startVal && endVal) {
+      setSelectedTimeRange('custom_range');
+      const [yr, mn, dy] = startVal.split('-').map(Number);
+      setCalendarDate(new Date(yr, mn - 1, dy));
+      
+      // Smooth scroll down to the task list below the calendar
+      setTimeout(() => {
+        document.getElementById('filtered-tasks-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
+  const handleTimeRangeClick = (key) => {
+    setSelectedTimeRange(key);
+    
+    const today = new Date();
+    if (key === 'yesterday') {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      setCalendarDate(yesterday);
+    } else if (key === 'today') {
+      setCalendarDate(new Date());
+    } else if (key === 'tomorrow') {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setCalendarDate(tomorrow);
+    } else if (key === 'last_week') {
+      const { start } = getWeekRange(-1);
+      setCalendarDate(start);
+    } else if (key === 'this_week') {
+      const { start } = getWeekRange(0);
+      setCalendarDate(start);
+    } else if (key === 'next_week') {
+      const { start } = getWeekRange(1);
+      setCalendarDate(start);
+    } else if (key === 'last_month') {
+      setCalendarDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    } else if (key === 'this_month') {
+      setCalendarDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    } else if (key === 'next_month') {
+      setCalendarDate(new Date(today.getFullYear(), today.getMonth() + 1, 1));
+    } else if (key === 'last_year') {
+      setCalendarDate(new Date(today.getFullYear() - 1, today.getMonth(), 1));
+    } else if (key === 'this_year') {
+      setCalendarDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    } else if (key === 'next_year') {
+      setCalendarDate(new Date(today.getFullYear() + 1, today.getMonth(), 1));
+    } else if (key === 'custom_date') {
+      if (customSelectedDate) {
+        const [yr, mn, dy] = customSelectedDate.split('-').map(Number);
+        setCalendarDate(new Date(yr, mn - 1, dy));
+      }
+    } else if (key === 'custom_range') {
+      if (customRangeStart) {
+        const [yr, mn, dy] = customRangeStart.split('-').map(Number);
+        setCalendarDate(new Date(yr, mn - 1, dy));
+      }
+    }
+
+    // Smooth scroll down to the task list below the calendar
+    setTimeout(() => {
+      document.getElementById('filtered-tasks-section')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  // Helper functions for weekends & holidays
+  const isWeekendDay = (date) => {
+    return weekendDays.includes(date.getDay());
+  };
+
+  const getHolidayForDate = (date) => {
+    const dDay = date.getDate();
+    const dMonth = date.getMonth() + 1;
+
+    const lunar = solarLunar.solar2lunar(
+      date.getFullYear(),
+      dMonth,
+      dDay
+    );
+    const lDay = lunar.lDay;
+    const lMonth = lunar.lMonth;
+
+    return holidays.find(h => {
+      if (h.type === 'solar') {
+        return h.day === dDay && h.month === dMonth;
+      } else if (h.type === 'lunar') {
+        return h.day === lDay && h.month === lMonth;
+      } else if (h.type === 'single') {
+        return h.dateStr === `${date.getFullYear()}-${String(dMonth).padStart(2, '0')}-${String(dDay).padStart(2, '0')}`;
+      }
+    });
+  };
+
+  const handleToggleWeekendDay = async (dayIndex) => {
+    let nextWeekends;
+    if (weekendDays.includes(dayIndex)) {
+      nextWeekends = weekendDays.filter(d => d !== dayIndex);
+    } else {
+      nextWeekends = [...weekendDays, dayIndex];
+    }
+    setWeekendDays(nextWeekends);
+    try {
+      await api.updateWeekendDays(nextWeekends);
+    } catch (err) {
+      console.error('Failed to update weekend days:', err.message);
+      setWeekendDays(weekendDays);
+    }
+  };
+
+  const handleAddHoliday = async (e) => {
+    e.preventDefault();
+    if (!newHolidayName.trim()) return;
+
+    const payload = {
+      name: newHolidayName.trim(),
+      type: newHolidayType,
+      month: newHolidayType === 'single' ? null : parseInt(newHolidayMonth),
+      day: newHolidayType === 'single' ? null : parseInt(newHolidayDay),
+      dateStr: newHolidayType === 'single' ? newHolidayDateStr : null,
+      color: newHolidayColor
+    };
+
+    try {
+      const res = await api.createHoliday(payload);
+      if (res && res.holiday) {
+        setHolidays(prev => [...prev, res.holiday]);
+        setNewHolidayName('');
+        setNewHolidayDateStr('');
+      }
+    } catch (err) {
+      console.error('Failed to create holiday:', err.message);
+    }
+  };
+
+  const handleDeleteHoliday = async (holidayId) => {
+    try {
+      await api.deleteHoliday(holidayId);
+      setHolidays(prev => prev.filter(h => h.id !== holidayId));
+    } catch (err) {
+      console.error('Failed to delete holiday:', err.message);
+    }
+  };
+
   // ───────────────────────────────────────────────
   // PREMIUM INTERACTIVE TASK CALENDAR RENDERER
   // ───────────────────────────────────────────────
   const renderCalendarView = () => {
-    // Generate dates for current calendar grid view (Monthly)
     const year = calendarDate.getFullYear();
     const month = calendarDate.getMonth();
-
-    // Start of current month
-    const firstDayOfMonth = new Date(year, month, 1);
-    // Number of days in current month
-    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
-
-    // Day of the week for the first day (Monday index = 0, Sunday index = 6)
-    let firstDayIndex = firstDayOfMonth.getDay() - 1; 
-    if (firstDayIndex === -1) firstDayIndex = 6; // Sunday fix
-
-    // Prepare calendar cells array
-    const dayCells = [];
-
-    // 1. Prefix days from previous month
-    const prevMonthDaysTotal = new Date(year, month, 0).getDate();
-    for (let i = firstDayIndex - 1; i >= 0; i--) {
-      const dayNum = prevMonthDaysTotal - i;
-      const cellDate = new Date(year, month - 1, dayNum);
-      dayCells.push({
-        date: cellDate,
-        dayNum,
-        isCurrentMonth: false
-      });
-    }
-
-    // 2. Days of current month
-    for (let i = 1; i <= totalDaysInMonth; i++) {
-      const cellDate = new Date(year, month, i);
-      dayCells.push({
-        date: cellDate,
-        dayNum: i,
-        isCurrentMonth: true
-      });
-    }
-
-    // 3. Suffix days of next month to fill grid (Usually up to 35 or 42 cells)
-    const totalCells = dayCells.length > 35 ? 42 : 35;
-    const remainingCells = totalCells - dayCells.length;
-    for (let i = 1; i <= remainingCells; i++) {
-      const cellDate = new Date(year, month + 1, i);
-      dayCells.push({
-        date: cellDate,
-        dayNum: i,
-        isCurrentMonth: false
-      });
-    }
-
-    const weekdays = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+    const activeRangeTasks = getTasksInTimeRange(selectedTimeRange);
 
     const handlePrevMonth = () => {
       setCalendarDate(new Date(year, month - 1, 1));
+      setInfiniteScrollMinOffset(-2);
+      setInfiniteScrollMaxOffset(2);
     };
 
     const handleNextMonth = () => {
       setCalendarDate(new Date(year, month + 1, 1));
+      setInfiniteScrollMinOffset(-2);
+      setInfiniteScrollMaxOffset(2);
     };
 
     const handleTodayClick = () => {
       setCalendarDate(new Date());
+      setInfiniteScrollMinOffset(-2);
+      setInfiniteScrollMaxOffset(2);
     };
 
-    // Filtered list under left sidebar selector
-    const activeRangeTasks = getTasksInTimeRange(selectedTimeRange);
+    const handleInfiniteScroll = (e) => {
+      const container = e.currentTarget;
+      const { scrollTop, scrollHeight, clientHeight } = container;
+
+      // Near bottom (less than 150px remaining)
+      if (scrollHeight - scrollTop - clientHeight < 150) {
+        setInfiniteScrollMaxOffset(prev => prev + 1);
+      }
+
+      // Near top (less than 150px from top)
+      if (scrollTop < 150) {
+        const oldScrollHeight = scrollHeight;
+        const oldScrollTop = scrollTop;
+        setInfiniteScrollMinOffset(prev => {
+          const nextMin = prev - 1;
+          requestAnimationFrame(() => {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+          });
+          return nextMin;
+        });
+      }
+    };
+
+    // Drag and Drop handlers for calendar columns
+    const handleDragStart = (e, taskId) => {
+      setCalendarDraggedTaskId(taskId);
+      e.dataTransfer.setData('text/plain', taskId);
+      setTimeout(() => {
+        const card = document.getElementById(`cal-card-${taskId}`);
+        if (card) card.classList.add('dragging');
+      }, 0);
+    };
+
+    const handleDragEnd = (taskId) => {
+      setCalendarDraggedTaskId(null);
+      setCalendarDragOverColumnId(null);
+      const card = document.getElementById(`cal-card-${taskId}`);
+      if (card) card.classList.remove('dragging');
+    };
+
+    const handleDragOver = (e, columnId) => {
+      e.preventDefault();
+      if (calendarDragOverColumnId !== columnId) {
+        setCalendarDragOverColumnId(columnId);
+      }
+    };
+
+    const handleDragLeave = () => {
+      setCalendarDragOverColumnId(null);
+    };
+
+    const handleDrop = (e, columnId) => {
+      e.preventDefault();
+      const taskId = e.dataTransfer.getData('text/plain');
+      if (taskId) {
+        handleUpdateTask(taskId, { status: columnId });
+      }
+      setCalendarDragOverColumnId(null);
+    };
+
+    // Inline edit handlers for calendar card title
+    const handleTitleBlur = (taskId, e) => {
+      const newTitle = e.target.innerText.trim();
+      if (newTitle) {
+        handleUpdateTask(taskId, { title: newTitle });
+      } else {
+        e.target.innerText = tasks.find(t => t.id === taskId).title; // Reset
+      }
+    };
+
+    const handleTitleKeyDown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.target.blur();
+      }
+    };
+
+    // Popups for quick updates in calendar view
+    const togglePopup = (taskId, type, e) => {
+      e.stopPropagation();
+      if (calendarActivePopup && calendarActivePopup.taskId === taskId && calendarActivePopup.type === type) {
+        setCalendarActivePopup(null);
+      } else {
+        setCalendarActivePopup({ taskId, type });
+      }
+    };
+
+    const handleSelectAssignee = (taskId, user) => {
+      handleUpdateTask(taskId, { assignee: user });
+      setCalendarActivePopup(null);
+    };
+
+    const handleSelectPriority = (taskId, priorityId) => {
+      handleUpdateTask(taskId, { priority: priorityId });
+      setCalendarActivePopup(null);
+    };
+
+    const handleSelectDate = (taskId, offsetDays) => {
+      const date = new Date();
+      date.setDate(date.getDate() + offsetDays);
+      date.setHours(17, 0, 0, 0);
+      handleUpdateTask(taskId, { dueDate: date });
+      setCalendarActivePopup(null);
+    };
+
+    const handleCustomDateChange = (taskId, e) => {
+      const val = e.target.value;
+      if (val) {
+        const date = new Date(val);
+        date.setHours(17, 0, 0, 0);
+        handleUpdateTask(taskId, { dueDate: date });
+      } else {
+        handleUpdateTask(taskId, { dueDate: null });
+      }
+      setCalendarActivePopup(null);
+    };
+
+    const formatDateString = (date) => {
+      if (!date) return '';
+      return new Date(date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }).replace(/\//g, '-');
+    };
+
+    const isOverdue = (date, status) => {
+      if (!date || status === 'done') return false;
+      return new Date(date) < new Date();
+    };
+
+    const getPrioLabel = (p) => {
+      if (p === 'high') return 'Khẩn cấp';
+      if (p === 'low') return 'Thấp';
+      return 'Vừa';
+    };
+
+    const renderMonthGrid = (offset) => {
+      const targetDate = new Date(year, month + offset, 1);
+      const gridYear = targetDate.getFullYear();
+      const gridMonth = targetDate.getMonth();
+
+      const firstDayOfMonth = new Date(gridYear, gridMonth, 1);
+      const totalDaysInMonth = new Date(gridYear, gridMonth + 1, 0).getDate();
+
+      let firstDayIndex = firstDayOfMonth.getDay() - 1; 
+      if (firstDayIndex === -1) firstDayIndex = 6; 
+
+      const dayCells = [];
+
+      const prevMonthDaysTotal = new Date(gridYear, gridMonth, 0).getDate();
+      for (let i = firstDayIndex - 1; i >= 0; i--) {
+        const dayNum = prevMonthDaysTotal - i;
+        const cellDate = new Date(gridYear, gridMonth - 1, dayNum);
+        dayCells.push({
+          date: cellDate,
+          dayNum,
+          isCurrentMonth: false
+        });
+      }
+
+      for (let i = 1; i <= totalDaysInMonth; i++) {
+        const cellDate = new Date(gridYear, gridMonth, i);
+        dayCells.push({
+          date: cellDate,
+          dayNum: i,
+          isCurrentMonth: true
+        });
+      }
+
+      const totalCells = dayCells.length > 35 ? 42 : 35;
+      const remainingCells = totalCells - dayCells.length;
+      for (let i = 1; i <= remainingCells; i++) {
+        const cellDate = new Date(gridYear, gridMonth + 1, i);
+        dayCells.push({
+          date: cellDate,
+          dayNum: i,
+          isCurrentMonth: false
+        });
+      }
+
+      const weekdays = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+
+      return (
+        <div className="month-grid-container" style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', minWidth: '280px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+              Tháng {gridMonth + 1}, {gridYear}
+            </span>
+            <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>
+              ({totalDaysInMonth} ngày)
+            </span>
+          </div>
+
+          <div className="calendar-weekdays-grid">
+            {weekdays.map(d => <div key={d}>{d}</div>)}
+          </div>
+
+          <div className="calendar-days-grid" style={{ gap: '6px', gridAutoRows: calendarViewMode === 'three_months' ? 'minmax(70px, 1fr)' : 'minmax(110px, 1fr)' }}>
+            {dayCells.map((cell, idx) => {
+              const cellTasks = tasks.filter(t => t.dueDate && isSameDay(new Date(t.dueDate), cell.date));
+              const cellIsToday = isSameDay(cell.date, new Date());
+              
+              const isWeekend = isWeekendDay(cell.date);
+              const holiday = getHolidayForDate(cell.date);
+
+              const lunar = solarLunar.solar2lunar(
+                cell.date.getFullYear(),
+                cell.date.getMonth() + 1,
+                cell.date.getDate()
+              );
+              const lunarText = lunar.lDay === 1
+                ? `${lunar.lDay}/${lunar.lMonth}${lunar.isLeap ? 'n' : ''}`
+                : lunar.lDay.toString();
+              
+              return (
+                <div 
+                  key={idx} 
+                  className={`calendar-day-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cellIsToday ? 'today' : ''} ${isWeekend ? 'weekend' : ''} ${holiday ? 'holiday' : ''} ${isDateInTimeRange(cell.date, selectedTimeRange) ? 'active-range-highlight' : ''}`}
+                  style={{ 
+                    minHeight: calendarViewMode === 'three_months' ? '70px' : '110px',
+                    padding: '6px',
+                    gap: '4px'
+                  }}
+                  onDoubleClick={() => {
+                    setSelectedTask({
+                      id: 't-new-' + Date.now(),
+                      title: '',
+                      description: '',
+                      status: 'todo',
+                      priority: 'medium',
+                      dueDate: cell.date,
+                      assignees: [],
+                      tags: [],
+                      comments: []
+                    });
+                  }}
+                  title={`Nhấp đúp chuột để tạo việc nhanh. Âm lịch: Ngày ${lunar.lDay} tháng ${lunar.lMonth}${lunar.isLeap ? ' (Nhuận)' : ''}, năm ${lunar.lYear}${holiday ? `. Ngày lễ: ${holiday.name}` : ''}`}
+                >
+                  <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="calendar-day-number" style={{ fontSize: '11px' }}>{cell.dayNum}</div>
+                    <div 
+                      className="calendar-lunar-number" 
+                      style={{ 
+                        fontSize: '9.5px', 
+                        fontWeight: '600', 
+                        color: '#eab308', 
+                        opacity: cell.isCurrentMonth ? 0.85 : 0.35,
+                        letterSpacing: '-0.3px'
+                      }}
+                    >
+                      {lunarText}
+                    </div>
+                  </div>
+                  
+                  <div className="calendar-task-list" style={{ gap: '2px' }}>
+                    {cellTasks.map(t => (
+                      <div
+                        key={t.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTask(t);
+                        }}
+                        className={`calendar-task-item ${t.priority}`}
+                        style={{ fontSize: '8.5px', padding: '2px 4px', borderRadius: '3px' }}
+                        title={`[${getPrioLabel(t.priority)}] ${t.title}`}
+                      >
+                        {t.title}
+                      </div>
+                    ))}
+                  </div>
+                  {holiday && (
+                    <div 
+                      className="calendar-holiday-tag" 
+                      title={holiday.name}
+                      style={{ backgroundColor: `${holiday.color}22`, color: holiday.color, borderColor: `${holiday.color}45` }}
+                    >
+                      {holiday.name}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
 
     const timeFilters = [
+      { section: 'Tùy chọn', items: [
+        { key: 'custom_date', label: 'Chọn ngày cụ thể', icon: <Calendar size={12} /> },
+        { key: 'custom_range', label: 'Chọn khoảng ngày', icon: <CalendarDays size={12} /> }
+      ]},
       { section: 'Ngày', items: [
         { key: 'yesterday', label: 'Hôm qua', icon: <Clock size={12} /> },
         { key: 'today', label: 'Hôm nay', icon: <Clock size={12} /> },
@@ -706,38 +1284,259 @@ export default function App() {
       ]}
     ];
 
-    const getPrioLabel = (p) => {
-      if (p === 'high') return 'Khẩn cấp';
-      if (p === 'low') return 'Thấp';
-      return 'Vừa';
-    };
-
     return (
-      <div className="calendar-dashboard">
+      <div 
+        className="calendar-dashboard" 
+        style={{ 
+          gridTemplateColumns: isTimeframePanelMinimized ? '60px 1fr' : '280px 1fr',
+          transition: 'grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      >
         {/* Left Side: Time Filters */}
-        <div className="time-filter-panel glass-panel">
-          <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '15px', fontWeight: '700', color: '#fff', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Filter size={15} style={{ color: 'var(--primary)' }} />
-            Mốc Thời Gian
+        <div 
+          className="time-filter-panel glass-panel"
+          style={{
+            padding: isTimeframePanelMinimized ? '20px 8px' : '24px',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: isTimeframePanelMinimized ? '12px' : '20px',
+            alignItems: isTimeframePanelMinimized ? 'center' : 'stretch',
+            overflow: 'hidden'
+          }}
+        >
+          <h3 
+            onClick={() => setIsTimeframePanelMinimized(prev => !prev)}
+            style={{ 
+              fontFamily: 'var(--font-title)', 
+              fontSize: '15px', 
+              fontWeight: '700', 
+              color: '#fff', 
+              borderBottom: isTimeframePanelMinimized ? 'none' : '1px solid rgba(255, 255, 255, 0.05)', 
+              paddingBottom: isTimeframePanelMinimized ? '0' : '12px', 
+              margin: 0, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: isTimeframePanelMinimized ? 'center' : 'space-between',
+              cursor: 'pointer',
+              userSelect: 'none',
+              width: '100%'
+            }}
+            title={isTimeframePanelMinimized ? "Mở rộng Mốc Thời Gian" : "Thu hẹp Mốc Thời Gian"}
+          >
+            {isTimeframePanelMinimized ? (
+              <Filter size={18} style={{ color: 'var(--primary)' }} />
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Filter size={15} style={{ color: 'var(--primary)' }} />
+                  <span>Mốc Thời Gian</span>
+                </div>
+                <ChevronLeft size={14} style={{ color: 'var(--text-muted)' }} />
+              </>
+            )}
           </h3>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-            {timeFilters.map(sec => (
-              <div key={sec.section} className="time-filter-section">
-                <div className="time-filter-sec-title">{sec.section}</div>
-                {sec.items.map(item => {
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: isTimeframePanelMinimized ? '10px' : '16px', 
+            maxHeight: '420px', 
+            overflowY: 'auto', 
+            paddingRight: '4px',
+            width: '100%'
+          }}>
+            {timeFilters.map((sec, secIdx) => (
+              <div key={sec.section} className="time-filter-section" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {isTimeframePanelMinimized ? (
+                  secIdx > 0 && <hr style={{ border: 'none', borderTop: '1px solid rgba(255, 255, 255, 0.05)', margin: '4px 0', width: '100%' }} />
+                ) : (
+                  <div 
+                    className="time-filter-sec-title"
+                    style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      cursor: sec.section === 'Tùy chọn' ? 'pointer' : 'default',
+                      userSelect: 'none'
+                    }}
+                    onClick={() => {
+                      if (sec.section === 'Tùy chọn') {
+                        setIsCustomDateSectionCollapsed(prev => !prev);
+                      }
+                    }}
+                  >
+                    <span>{sec.section}</span>
+                    {sec.section === 'Tùy chọn' && (
+                      isCustomDateSectionCollapsed ? <ChevronDown size={11} /> : <ChevronUp size={11} />
+                    )}
+                  </div>
+                )}
+
+                {(!isCustomDateSectionCollapsed || sec.section !== 'Tùy chọn' || isTimeframePanelMinimized) && sec.items.map(item => {
+                  if (item.key === 'custom_date') {
+                    const cnt = getTasksInTimeRange('custom_date').length;
+                    
+                    if (isTimeframePanelMinimized) {
+                      return (
+                        <button
+                          key={item.key}
+                          onClick={() => handleTimeRangeClick('custom_date')}
+                          className={`time-filter-btn ${selectedTimeRange === 'custom_date' ? 'active' : ''}`}
+                          style={{ padding: '10px', justifyContent: 'center', width: '100%' }}
+                          title={`Chọn ngày cụ thể: ${customSelectedDate ? new Date(customSelectedDate).toLocaleDateString('vi-VN') : 'Chưa chọn'} (${cnt} việc)`}
+                        >
+                          {item.icon}
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <div key={item.key} className="custom-date-filter-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <button
+                          onClick={() => {
+                            if (customSelectedDate) {
+                              handleTimeRangeClick('custom_date');
+                            } else {
+                              document.getElementById('custom-date-picker')?.showPicker();
+                            }
+                          }}
+                          className={`time-filter-btn ${selectedTimeRange === 'custom_date' ? 'active' : ''}`}
+                          style={{ width: '100%' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {item.icon}
+                            <span>{customSelectedDate ? new Date(customSelectedDate).toLocaleDateString('vi-VN') : 'Chọn ngày cụ thể...'}</span>
+                          </div>
+                          {customSelectedDate && <span className="time-filter-count">{cnt}</span>}
+                        </button>
+                        <input
+                          id="custom-date-picker"
+                          type="date"
+                          value={customSelectedDate}
+                          onChange={(e) => handleCustomDateChange(e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: '10px',
+                            color: '#fff',
+                            fontSize: '11.5px',
+                            padding: '8px 12px',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                            width: '100%',
+                            transition: 'all 0.2s ease'
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (item.key === 'custom_range') {
+                    const cnt = getTasksInTimeRange('custom_range').length;
+                    
+                    if (isTimeframePanelMinimized) {
+                      const rangeStr = (customRangeStart && customRangeEnd)
+                        ? `${new Date(customRangeStart).toLocaleDateString('vi-VN')} - ${new Date(customRangeEnd).toLocaleDateString('vi-VN')}`
+                        : 'Chưa chọn';
+                      return (
+                        <button
+                          key={item.key}
+                          onClick={() => handleTimeRangeClick('custom_range')}
+                          className={`time-filter-btn ${selectedTimeRange === 'custom_range' ? 'active' : ''}`}
+                          style={{ padding: '10px', justifyContent: 'center', width: '100%' }}
+                          title={`Chọn khoảng ngày: ${rangeStr} (${cnt} việc)`}
+                        >
+                          {item.icon}
+                        </button>
+                      );
+                    }
+
+                    const displayLabel = (customRangeStart && customRangeEnd)
+                      ? `${new Date(customRangeStart).toLocaleDateString('vi-VN')} - ${new Date(customRangeEnd).toLocaleDateString('vi-VN')}`
+                      : 'Chọn khoảng ngày...';
+                    return (
+                      <div key={item.key} className="custom-range-filter-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <button
+                          onClick={() => {
+                            if (customRangeStart && customRangeEnd) {
+                              handleTimeRangeClick('custom_range');
+                            }
+                          }}
+                          className={`time-filter-btn ${selectedTimeRange === 'custom_range' ? 'active' : ''}`}
+                          style={{ width: '100%' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {item.icon}
+                            <span>{displayLabel}</span>
+                          </div>
+                          {(customRangeStart && customRangeEnd) && <span className="time-filter-count">{cnt}</span>}
+                        </button>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontSize: '8.5px', color: 'var(--text-muted)', fontWeight: 'bold', paddingLeft: '2px' }}>TỪ NGÀY</span>
+                            <input
+                              type="date"
+                              value={customRangeStart}
+                              onChange={(e) => handleCustomRangeChange('start', e.target.value)}
+                              className="custom-range-input"
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                borderRadius: '8px',
+                                color: '#fff',
+                                fontSize: '10px',
+                                padding: '6px 8px',
+                                outline: 'none',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                                width: '100%',
+                                transition: 'all 0.2s ease'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontSize: '8.5px', color: 'var(--text-muted)', fontWeight: 'bold', paddingLeft: '2px' }}>ĐẾN NGÀY</span>
+                            <input
+                              type="date"
+                              value={customRangeEnd}
+                              onChange={(e) => handleCustomRangeChange('end', e.target.value)}
+                              className="custom-range-input"
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                borderRadius: '8px',
+                                color: '#fff',
+                                fontSize: '10px',
+                                padding: '6px 8px',
+                                outline: 'none',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                                width: '100%',
+                                transition: 'all 0.2s ease'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const cnt = getTasksInTimeRange(item.key).length;
                   return (
                     <button
                       key={item.key}
-                      onClick={() => setSelectedTimeRange(item.key)}
+                      onClick={() => handleTimeRangeClick(item.key)}
                       className={`time-filter-btn ${selectedTimeRange === item.key ? 'active' : ''}`}
+                      style={isTimeframePanelMinimized ? { padding: '10px', justifyContent: 'center', width: '100%' } : {}}
+                      title={isTimeframePanelMinimized ? `${item.label} (${cnt} việc)` : undefined}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: isTimeframePanelMinimized ? 'center' : 'flex-start' }}>
                         {item.icon}
-                        <span>{item.label}</span>
+                        {!isTimeframePanelMinimized && <span>{item.label}</span>}
                       </div>
-                      <span className="time-filter-count">{cnt}</span>
+                      {!isTimeframePanelMinimized && <span className="time-filter-count">{cnt}</span>}
                     </button>
                   );
                 })}
@@ -747,18 +1546,71 @@ export default function App() {
         </div>
 
         {/* Right Side: Monthly Calendar Grid & List view */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, minWidth: 0 }}>
           
           {/* Calendar Grid panel */}
           <div className="calendar-panel glass-panel">
             
             {/* Header navigator */}
-            <div className="calendar-header">
-              <div className="calendar-month-title">
+            <div className="calendar-header" style={{ borderBottom: isCalendarGridMinimized ? 'none' : '1px solid rgba(255, 255, 255, 0.05)', flexWrap: 'wrap', gap: '12px' }}>
+              <div 
+                className="calendar-month-title"
+                onClick={() => setIsCalendarGridMinimized(prev => !prev)}
+                style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
                 <Calendar size={18} style={{ color: '#06b6d4' }} />
                 <span>Tháng {month + 1}, {year}</span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '4px' }}>
+                  {isCalendarGridMinimized ? '(Nhấp để mở rộng)' : '(Nhấp để thu nhỏ)'}
+                </span>
               </div>
+
+              {!isCalendarGridMinimized && (
+                <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '10px', padding: '2px' }}>
+                  <button 
+                    onClick={() => setCalendarViewMode('single_month')}
+                    className="calendar-nav-btn"
+                    style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'single_month' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'single_month' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'single_month' ? '#c084fc' : 'var(--text-secondary)' }}
+                  >
+                    1 Tháng
+                  </button>
+                  <button 
+                    onClick={() => setCalendarViewMode('three_months')}
+                    className="calendar-nav-btn"
+                    style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'three_months' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'three_months' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'three_months' ? '#c084fc' : 'var(--text-secondary)' }}
+                  >
+                    3 Tháng
+                  </button>
+                  <button 
+                    onClick={() => setCalendarViewMode('infinite_scroll')}
+                    className="calendar-nav-btn"
+                    style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'infinite_scroll' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'infinite_scroll' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'infinite_scroll' ? '#c084fc' : 'var(--text-secondary)' }}
+                  >
+                    Cuộn vô tận
+                  </button>
+                </div>
+              )}
+
               <div className="calendar-nav-group">
+                <button 
+                  onClick={() => setIsHolidaySettingsOpen(true)} 
+                  className="calendar-nav-btn" 
+                  title="Cài đặt ngày nghỉ & ngày lễ"
+                  style={{ 
+                    width: 'auto', 
+                    padding: '0 12px', 
+                    display: 'flex', 
+                    gap: '6px', 
+                    alignItems: 'center', 
+                    borderColor: 'rgba(244, 63, 94, 0.25)', 
+                    color: '#f43f5e', 
+                    background: 'rgba(244, 63, 94, 0.06)',
+                    marginRight: '6px'
+                  }}
+                >
+                  <Settings size={13} />
+                  <span style={{ fontSize: '11px', fontWeight: '600' }}>Cài đặt ngày nghỉ</span>
+                </button>
                 <button onClick={handleTodayClick} className="calendar-nav-btn" style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '0 12px' }}>
                   Hôm nay
                 </button>
@@ -768,121 +1620,713 @@ export default function App() {
                 <button onClick={handleNextMonth} className="calendar-nav-btn" title="Tháng sau">
                   <ChevronRight size={16} />
                 </button>
+                <button 
+                  onClick={() => setIsCalendarGridMinimized(prev => !prev)} 
+                  className="calendar-nav-btn" 
+                  title={isCalendarGridMinimized ? "Hiển thị lịch" : "Thu nhỏ lịch"}
+                  style={{ marginLeft: '8px', color: 'var(--primary)' }}
+                >
+                  {isCalendarGridMinimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                </button>
               </div>
             </div>
 
-            {/* Weekdays Labels */}
-            <div className="calendar-weekdays-grid">
-              {weekdays.map(d => <div key={d}>{d}</div>)}
-            </div>
+            {!isCalendarGridMinimized && (
+              <div 
+                className="calendar-body-content"
+                style={{ 
+                  padding: '20px 0 0 0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '24px',
+                  width: '100%',
+                  minWidth: 0
+                }}
+              >
+                {calendarViewMode === 'single_month' && (
+                  renderMonthGrid(0)
+                )}
 
-            {/* Days Grid */}
-            <div className="calendar-days-grid">
-              {dayCells.map((cell, idx) => {
-                const cellTasks = tasks.filter(t => t.dueDate && isSameDay(new Date(t.dueDate), cell.date));
-                const cellIsToday = isSameDay(cell.date, new Date());
-                
-                return (
+                {calendarViewMode === 'three_months' && (
                   <div 
-                    key={idx} 
-                    className={`calendar-day-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cellIsToday ? 'today' : ''}`}
-                    onDoubleClick={() => {
-                      // Trigger task creation for double-clicked day
-                      const initialTitle = "";
-                      setSelectedTask({
-                        id: 't-new-' + Date.now(),
-                        title: '',
-                        description: '',
-                        status: 'todo',
-                        priority: 'medium',
-                        dueDate: cell.date,
-                        assignees: [],
-                        tags: [],
-                        comments: []
-                      });
+                    className="calendar-three-months-container"
+                    style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
+                      gap: '24px',
+                      width: '100%'
                     }}
-                    title="Nhấp đúp chuột để tạo việc nhanh tại ngày này"
                   >
-                    <div className="calendar-day-number">{cell.dayNum}</div>
-                    
-                    <div className="calendar-task-list">
-                      {cellTasks.map(t => (
-                        <div
-                          key={t.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTask(t);
-                          }}
-                          className={`calendar-task-item ${t.priority}`}
-                          title={`[${getPrioLabel(t.priority)}] ${t.title}`}
-                        >
-                          {t.title}
-                        </div>
-                      ))}
-                    </div>
+                    {renderMonthGrid(-1)}
+                    {renderMonthGrid(0)}
+                    {renderMonthGrid(1)}
                   </div>
-                );
-              })}
-            </div>
+                )}
+
+                {calendarViewMode === 'infinite_scroll' && (
+                  <div 
+                    onScroll={handleInfiniteScroll}
+                    className="calendar-infinite-scroll-container"
+                    style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '32px', 
+                      maxHeight: '650px', 
+                      overflowY: 'auto',
+                      paddingRight: '8px',
+                      width: '100%',
+                      scrollBehavior: 'auto'
+                    }}
+                  >
+                    {Array.from(
+                      { length: infiniteScrollMaxOffset - infiniteScrollMinOffset + 1 },
+                      (_, i) => infiniteScrollMinOffset + i
+                    ).map(offset => (
+                      <div key={offset}>
+                        {renderMonthGrid(offset)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
 
           {/* List display under selection */}
-          <div className="chart-panel glass-panel" style={{ padding: '24px' }}>
-            <h3 className="chart-panel-title" style={{ margin: 0, paddingBottom: '14px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <Clock size={16} style={{ color: '#fbbf24' }} />
-              <span>Danh sách công việc: {timeFilters.flatMap(f => f.items).find(i => i.key === selectedTimeRange)?.label || selectedTimeRange} ({activeRangeTasks.length})</span>
-            </h3>
+          <div 
+            id="filtered-tasks-section" 
+            className="chart-panel glass-panel" 
+            style={{ padding: '24px' }}
+            onClick={() => setCalendarActivePopup(null)}
+          >
+            <div 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                paddingBottom: '14px', 
+                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}
+            >
+              <h3 className="chart-panel-title" style={{ margin: 0, border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={16} style={{ color: '#fbbf24' }} />
+                <span>Danh sách công việc: {timeFilters.flatMap(f => f.items).find(i => i.key === selectedTimeRange)?.label || selectedTimeRange} ({activeRangeTasks.length})</span>
+              </h3>
+
+              {/* Segmented Controller Switcher */}
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  gap: '4px', 
+                  background: 'rgba(255, 255, 255, 0.03)', 
+                  border: '1px solid rgba(255, 255, 255, 0.06)', 
+                  borderRadius: '10px', 
+                  padding: '2px' 
+                }}
+              >
+                <button 
+                  onClick={() => setCalendarListGroupingMode('priority')}
+                  className="calendar-nav-btn"
+                  style={{ 
+                    fontSize: '11px', 
+                    fontWeight: '600', 
+                    width: 'auto', 
+                    padding: '4px 12px', 
+                    height: '26px', 
+                    background: calendarListGroupingMode === 'priority' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', 
+                    borderColor: calendarListGroupingMode === 'priority' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', 
+                    color: calendarListGroupingMode === 'priority' ? '#c084fc' : 'var(--text-secondary)' 
+                  }}
+                >
+                  Độ ưu tiên
+                </button>
+                <button 
+                  onClick={() => setCalendarListGroupingMode('status')}
+                  className="calendar-nav-btn"
+                  style={{ 
+                    fontSize: '11px', 
+                    fontWeight: '600', 
+                    width: 'auto', 
+                    padding: '4px 12px', 
+                    height: '26px', 
+                    background: calendarListGroupingMode === 'status' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', 
+                    borderColor: calendarListGroupingMode === 'status' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', 
+                    color: calendarListGroupingMode === 'status' ? '#c084fc' : 'var(--text-secondary)' 
+                  }}
+                >
+                  Tiến độ công việc
+                </button>
+              </div>
+            </div>
 
             {activeRangeTasks.length === 0 ? (
               <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12.5px', fontStyle: 'italic' }}>
                 Không có công việc nào trong mốc thời gian này.
               </div>
             ) : (
-              <div className="filtered-tasks-grid" style={{ marginTop: '16px' }}>
-                {activeRangeTasks.map(task => {
-                  const dueStr = new Date(task.dueDate).toLocaleDateString('vi-VN') + ' ' + new Date(task.dueDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                  return (
-                    <div
-                      key={task.id}
-                      onClick={() => setSelectedTask(task)}
-                      className="kpi-card glass-panel"
-                      style={{
-                        padding: '16px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-start',
-                        gap: '10px',
-                        borderLeft: `4px solid ${task.priority === 'high' ? 'var(--danger)' : (task.priority === 'low' ? 'var(--success)' : 'var(--warning)')}`
-                      }}
-                    >
-                      <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: '8px' }}>
-                        <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', color: task.priority === 'high' ? 'var(--danger)' : (task.priority === 'low' ? 'var(--success)' : 'var(--warning)') }}>
-                          {getPrioLabel(task.priority)}
-                        </span>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '500' }}>
-                          Trạng thái: {task.status === 'done' ? 'Hoàn thành' : (task.status === 'review' ? 'Đang review' : (task.status === 'in_progress' ? 'Đang làm' : 'Cần làm'))}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff', lineHeight: 1.3, width: '100%', whiteSpace: 'nowrap', overflow: 'hidden', text_overflow: 'ellipsis' }}>
-                        {task.title}
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={11} />
-                          <span>Hạn: {dueStr}</span>
+              calendarListGroupingMode === 'priority' ? (
+                <div className="filtered-tasks-grid" style={{ marginTop: '16px' }}>
+                  {activeRangeTasks.map(task => {
+                    const dueStr = task.dueDate ? (new Date(task.dueDate).toLocaleDateString('vi-VN') + ' ' + new Date(task.dueDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })) : 'Chưa đặt';
+                    
+                    return (
+                      <div
+                        key={task.id}
+                        id={`cal-card-priority-${task.id}`}
+                        onDoubleClick={() => setSelectedTask(task)}
+                        className={`task-card glass-panel fade-in ${calendarActivePopup && calendarActivePopup.taskId === task.id ? 'active-popup' : ''}`}
+                        style={{
+                          padding: '16px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          gap: '10px',
+                          borderLeft: `4px solid ${task.priority === 'high' ? 'var(--danger)' : (task.priority === 'low' ? 'var(--success)' : 'var(--warning)')}`
+                        }}
+                      >
+                        {/* Top row: Priority & Status */}
+                        <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                          
+                          {/* Interactive Priority Badge */}
+                          <div 
+                            onClick={(e) => togglePopup(task.id, 'priority', e)}
+                            style={{ position: 'relative', cursor: 'pointer' }}
+                            title="Đổi độ ưu tiên"
+                          >
+                            <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', color: task.priority === 'high' ? 'var(--danger)' : (task.priority === 'low' ? 'var(--success)' : 'var(--warning)') }}>
+                              {getPrioLabel(task.priority)}
+                            </span>
+
+                            {/* Priority Selection Popup */}
+                            {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'priority' && (
+                              <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ top: '100%', left: 0, zIndex: 100 }}>
+                                <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>ĐỘ ƯU TIÊN</div>
+                                {PRIORITIES.map(prio => (
+                                  <button
+                                    key={prio.id}
+                                    className={`inline-overlay-item ${task.priority === prio.id ? 'active' : ''}`}
+                                    onClick={() => handleSelectPriority(task.id, prio.id)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', width: '100%', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }}
+                                  >
+                                    <span className="column-dot" style={{ backgroundColor: prio.color, width: 6, height: 6, borderRadius: '50%' }} />
+                                    <span style={{ flex: 1 }}>{prio.label}</span>
+                                    {task.priority === prio.id && <Check size={12} />}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Interactive Status Badge & Hover Delete Button */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div 
+                              onClick={(e) => togglePopup(task.id, 'status', e)}
+                              style={{ position: 'relative', cursor: 'pointer' }}
+                              title="Đổi trạng thái"
+                            >
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '500' }}>
+                                Trạng thái: {task.status === 'done' ? 'Hoàn thành' : (task.status === 'review' ? 'Đang review' : (task.status === 'in_progress' ? 'Đang làm' : 'Cần làm'))}
+                              </span>
+
+                              {/* Status Selection Popup */}
+                              {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'status' && (
+                                <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ top: '100%', right: 0, left: 'auto', zIndex: 100, minWidth: '130px' }}>
+                                  <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>TRẠNG THÁI</div>
+                                  {[
+                                    { key: 'todo', label: 'Cần làm', color: 'var(--text-muted)' },
+                                    { key: 'in_progress', label: 'Đang làm', color: 'var(--primary)' },
+                                    { key: 'review', label: 'Đang review', color: 'var(--info)' },
+                                    { key: 'done', label: 'Hoàn thành', color: 'var(--success)' }
+                                  ].map(st => (
+                                    <button
+                                      key={st.key}
+                                      className={`inline-overlay-item ${task.status === st.key ? 'active' : ''}`}
+                                      onClick={() => {
+                                        handleUpdateTask(task.id, { status: st.key });
+                                        setCalendarActivePopup(null);
+                                      }}
+                                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', width: '100%', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }}
+                                    >
+                                      <span className="column-dot" style={{ backgroundColor: st.color, width: 6, height: 6, borderRadius: '50%' }} />
+                                      <span style={{ flex: 1 }}>{st.label}</span>
+                                      {task.status === st.key && <Check size={12} />}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* subtle hover delete button */}
+                            <button
+                              className="card-delete-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTask(task.id);
+                              }}
+                              title="Xóa công việc"
+                              style={{ padding: '2px', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+
                         </div>
-                        <div style={{ display: 'flex', gap: '-4px' }}>
-                          {task.assignees && task.assignees.map(a => (
-                            <img key={a.id} src={a.avatar} alt={a.name} style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.2)' }} title={a.name} />
-                          ))}
+
+                        {/* Middle: Content Editable Title */}
+                        <div 
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={(e) => handleTitleBlur(task.id, e)}
+                          onKeyDown={handleTitleKeyDown}
+                          onClick={(e) => e.stopPropagation()} // Stop opening editor
+                          style={{ 
+                            fontSize: '13px', 
+                            fontWeight: '600', 
+                            color: '#fff', 
+                            lineHeight: 1.4, 
+                            width: '100%', 
+                            outline: 'none',
+                            cursor: 'text'
+                          }}
+                        >
+                          {task.title}
+                        </div>
+
+                        {/* Bottom row: Due Date & Assignees */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          
+                          {/* Interactive Due Date Badge */}
+                          <div 
+                            onClick={(e) => togglePopup(task.id, 'date', e)}
+                            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                            title="Đổi hạn chót"
+                          >
+                            <Clock size={11} />
+                            <span>Hạn: {dueStr}</span>
+
+                            {/* Date Selection Popup */}
+                            {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'date' && (
+                              <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ top: '100%', left: 0, zIndex: 100, minWidth: '150px' }}>
+                                <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>CHỌN HẠN CHÓT</div>
+                                <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 0)}>Hôm nay</button>
+                                <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 1)}>Ngày mai</button>
+                                <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 2)}>Sau 2 ngày</button>
+                                <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 7)}>Tuần sau</button>
+                                <div style={{ padding: '4px 8px', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '4px' }}>
+                                  <label style={{ display: 'block', fontSize: '9px', color: '#71717a', marginBottom: '4px' }}>CHỌN NGÀY CỤ THỂ</label>
+                                  <input
+                                    type="date"
+                                    className="custom-date-input"
+                                    style={{
+                                      width: '100%',
+                                      background: '#09090b',
+                                      border: '1px solid rgba(255,255,255,0.1)',
+                                      borderRadius: '4px',
+                                      color: 'white',
+                                      padding: '4px',
+                                      fontSize: '11px',
+                                      outline: 'none'
+                                    }}
+                                    onChange={(e) => handleCustomDateChange(task.id, e)}
+                                    value={task.dueDate ? new Date(task.dueDate).toISOString().substr(0, 10) : ''}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Interactive Assignees Stack */}
+                          <div 
+                            onClick={(e) => togglePopup(task.id, 'assignee', e)}
+                            style={{ position: 'relative', display: 'flex', gap: '-4px', cursor: 'pointer', alignItems: 'center', minWidth: '20px', minHeight: '20px' }}
+                            title="Đổi người thực hiện"
+                          >
+                            {task.assignees && task.assignees.length > 0 ? (
+                              task.assignees.map(a => (
+                                <img 
+                                  key={a.id} 
+                                  src={a.avatar} 
+                                  alt={a.name} 
+                                  style={{ 
+                                    width: '20px', 
+                                    height: '20px', 
+                                    borderRadius: '50%', 
+                                    border: '2px solid rgba(0,0,0,0.2)',
+                                    objectFit: 'cover' 
+                                  }} 
+                                  title={a.name} 
+                                />
+                              ))
+                            ) : (
+                              <User size={14} style={{ color: 'var(--text-muted)' }} />
+                            )}
+
+                            {/* Assignee Selection Popup */}
+                            {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'assignee' && (
+                              <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ minWidth: '180px', top: '100%', right: 0, left: 'auto', zIndex: 100 }}>
+                                <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>GÁN NGƯỜI THỰC HIỆN</div>
+                                {teamMembers.map(user => {
+                                  const isAssigned = task.assignees && task.assignees.some(a => a.id === user.id);
+                                  return (
+                                    <button
+                                      key={user.id}
+                                      type="button"
+                                      className={`inline-overlay-item ${isAssigned ? 'active' : ''}`}
+                                      onClick={() => {
+                                        let nextAssigneeIds;
+                                        const currentIds = task.assignees ? task.assignees.map(a => a.id) : [];
+                                        if (isAssigned) {
+                                          nextAssigneeIds = currentIds.filter(id => id !== user.id);
+                                        } else {
+                                          nextAssigneeIds = [...currentIds, user.id];
+                                        }
+                                        const nextAssignees = teamMembers.filter(u => nextAssigneeIds.includes(u.id));
+                                        handleUpdateTask(task.id, { assignees: nextAssignees });
+                                      }}
+                                      style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', width: '100%', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }}
+                                    >
+                                      <input 
+                                        type="checkbox" 
+                                        checked={isAssigned} 
+                                        readOnly 
+                                        style={{ accentColor: '#8b5cf6', width: '12px', height: '12px', pointerEvents: 'none' }}
+                                      />
+                                      <img src={user.avatar} className="avatar" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />
+                                      <span style={{ flex: 1 }}>{user.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div 
+                  className="calendar-status-columns" 
+                  style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
+                    gap: '16px', 
+                    marginTop: '16px',
+                    width: '100%',
+                    alignItems: 'start'
+                  }}
+                >
+                  {[
+                    { key: 'todo', label: 'Cần làm', color: 'var(--text-muted)' },
+                    { key: 'in_progress', label: 'Đang làm', color: 'var(--primary)' },
+                    { key: 'review', label: 'Đang review', color: 'var(--info)' },
+                    { key: 'done', label: 'Hoàn thành', color: 'var(--success)' }
+                  ].map(col => {
+                    const colTasks = activeRangeTasks.filter(t => t.status === col.key);
+                    return (
+                      <div 
+                        key={col.key} 
+                        className={`status-column-panel ${calendarDragOverColumnId === col.key ? 'drag-over' : ''}`}
+                        onDragOver={(e) => handleDragOver(e, col.key)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, col.key)}
+                        style={{ 
+                          background: calendarDragOverColumnId === col.key ? 'rgba(139, 92, 246, 0.04)' : 'rgba(255, 255, 255, 0.01)', 
+                          border: calendarDragOverColumnId === col.key ? '1px solid var(--primary)' : '1px solid rgba(255, 255, 255, 0.03)', 
+                          borderRadius: '12px',
+                          padding: '12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                          minHeight: '220px',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        {/* Column Header */}
+                        <div 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                            paddingBottom: '8px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span 
+                              style={{ 
+                                width: '8px', 
+                                height: '8px', 
+                                borderRadius: '50%', 
+                                background: col.color 
+                              }} 
+                            />
+                            <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#fff' }}>
+                              {col.label}
+                            </span>
+                          </div>
+                          <span 
+                            style={{ 
+                              fontSize: '10px', 
+                              background: 'rgba(255, 255, 255, 0.04)', 
+                              padding: '2px 6px', 
+                              borderRadius: '6px',
+                              color: 'var(--text-secondary)',
+                              fontWeight: '600'
+                            }}
+                          >
+                            {colTasks.length}
+                          </span>
+                        </div>
+
+                        {/* Column Tasks Body */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+                          {colTasks.length === 0 ? (
+                            <div 
+                              style={{ 
+                                padding: '30px 0', 
+                                textAlign: 'center', 
+                                color: 'var(--text-muted)', 
+                                fontSize: '11px', 
+                                fontStyle: 'italic' 
+                              }}
+                            >
+                              Không có công việc
+                            </div>
+                          ) : (
+                            colTasks.map(task => {
+                              const isTaskOverdue = isOverdue(task.dueDate, task.status);
+                              
+                              return (
+                                <div
+                                  key={task.id}
+                                  id={`cal-card-${task.id}`}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, task.id)}
+                                  onDragEnd={() => handleDragEnd(task.id)}
+                                  onDoubleClick={() => setSelectedTask(task)}
+                                  className={`task-card fade-in ${calendarActivePopup && calendarActivePopup.taskId === task.id ? 'active-popup' : ''}`}
+                                >
+                                  {/* Card Header Row */}
+                                  <div className="card-header-row">
+                                    <div
+                                      className="card-title"
+                                      contentEditable
+                                      suppressContentEditableWarning
+                                      onBlur={(e) => handleTitleBlur(task.id, e)}
+                                      onKeyDown={handleTitleKeyDown}
+                                      onClick={(e) => e.stopPropagation()} // Stop opening editor
+                                    >
+                                      {task.title}
+                                    </div>
+                                    
+                                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                      <button
+                                        className="card-edit-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedTask(task);
+                                        }}
+                                        title="Chỉnh sửa chi tiết"
+                                      >
+                                        <Edit2 size={11} />
+                                      </button>
+
+                                      <button
+                                        className="card-delete-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteTask(task.id);
+                                        }}
+                                        title="Xóa công việc"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Card Tags Row */}
+                                  {task.tags && task.tags.length > 0 && (
+                                    <div className="card-tags">
+                                      {task.tags.map(tag => (
+                                        <span key={tag} className="card-tag">#{tag}</span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Card Badges Row */}
+                                  <div className="card-badges">
+                                    {/* Assignees Badge */}
+                                    <div 
+                                      className="card-badge assignee"
+                                      onClick={(e) => togglePopup(task.id, 'assignee', e)}
+                                      style={{ position: 'relative' }}
+                                      title="Đổi người thực hiện"
+                                    >
+                                      {task.assignees && task.assignees.length > 0 ? (
+                                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                                          <div style={{ display: 'flex', marginRight: '4px' }}>
+                                            {task.assignees.slice(0, 3).map((ass, i) => (
+                                              <img 
+                                                key={ass.id} 
+                                                src={ass.avatar} 
+                                                alt={ass.name} 
+                                                className="avatar" 
+                                                style={{ 
+                                                  width: 15, 
+                                                  height: 15, 
+                                                  borderRadius: '50%',
+                                                  marginLeft: i > 0 ? '-5px' : '0px',
+                                                  border: '1px solid #18181b',
+                                                  objectFit: 'cover',
+                                                  zIndex: 10 - i
+                                                }} 
+                                              />
+                                            ))}
+                                          </div>
+                                          <span style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>
+                                            {task.assignees.length > 3 
+                                              ? `+${task.assignees.length - 3}` 
+                                              : task.assignees.map(a => a.name.split(' ').pop()).join(', ')
+                                            }
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <User size={10} />
+                                          <span>Chưa giao</span>
+                                        </>
+                                      )}
+
+                                      {/* Assignee Selection Popup */}
+                                      {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'assignee' && (
+                                        <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ minWidth: '180px', top: '100%', zIndex: 100 }}>
+                                          <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>GÁN NGƯỜI THỰC HIỆN</div>
+                                          {teamMembers.map(user => {
+                                            const isAssigned = task.assignees && task.assignees.some(a => a.id === user.id);
+                                            return (
+                                              <button
+                                                key={user.id}
+                                                type="button"
+                                                className={`inline-overlay-item ${isAssigned ? 'active' : ''}`}
+                                                onClick={() => {
+                                                  let nextAssigneeIds;
+                                                  const currentIds = task.assignees ? task.assignees.map(a => a.id) : [];
+                                                  if (isAssigned) {
+                                                    nextAssigneeIds = currentIds.filter(id => id !== user.id);
+                                                  } else {
+                                                    nextAssigneeIds = [...currentIds, user.id];
+                                                  }
+                                                  const nextAssignees = teamMembers.filter(u => nextAssigneeIds.includes(u.id));
+                                                  handleUpdateTask(task.id, { assignees: nextAssignees });
+                                                }}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', width: '100%', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }}
+                                              >
+                                                <input 
+                                                  type="checkbox" 
+                                                  checked={isAssigned} 
+                                                  readOnly 
+                                                  style={{ accentColor: '#8b5cf6', width: '12px', height: '12px', pointerEvents: 'none' }}
+                                                />
+                                                <img src={user.avatar} className="avatar" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />
+                                                <span style={{ flex: 1 }}>{user.name}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Priority Badge */}
+                                    <div 
+                                      className={`card-badge priority-${task.priority}`}
+                                      onClick={(e) => togglePopup(task.id, 'priority', e)}
+                                      style={{ position: 'relative' }}
+                                      title="Đổi độ ưu tiên"
+                                    >
+                                      <ShieldAlert size={10} />
+                                      <span>
+                                        {task.priority === 'high' ? 'Khẩn cấp' : task.priority === 'medium' ? 'Vừa' : 'Thấp'}
+                                      </span>
+
+                                      {/* Priority Selection Popup */}
+                                      {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'priority' && (
+                                        <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ top: '100%', zIndex: 100 }}>
+                                          <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>ĐỘ ƯU TIÊN</div>
+                                          {PRIORITIES.map(prio => (
+                                            <button
+                                              key={prio.id}
+                                              className={`inline-overlay-item ${task.priority === prio.id ? 'active' : ''}`}
+                                              onClick={() => handleSelectPriority(task.id, prio.id)}
+                                              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', width: '100%', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }}
+                                            >
+                                              <span className="column-dot" style={{ backgroundColor: prio.color, width: 6, height: 6, borderRadius: '50%' }} />
+                                              <span style={{ flex: 1 }}>{prio.label}</span>
+                                              {task.priority === prio.id && <Check size={12} />}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Due Date Badge */}
+                                    <div 
+                                      className={`card-badge date ${isTaskOverdue ? 'overdue' : ''}`}
+                                      onClick={(e) => togglePopup(task.id, 'date', e)}
+                                      style={{ position: 'relative' }}
+                                      title="Đổi hạn chót"
+                                    >
+                                      <Calendar size={10} />
+                                      <span>
+                                        {task.dueDate ? formatDateString(task.dueDate) : 'Đặt hạn'}
+                                      </span>
+
+                                      {/* Date Selection Popup */}
+                                      {calendarActivePopup && calendarActivePopup.taskId === task.id && calendarActivePopup.type === 'date' && (
+                                        <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ top: '100%', zIndex: 100, minWidth: '150px' }}>
+                                          <div style={{ padding: '4px 8px', fontSize: '10px', color: '#71717a', fontWeight: 'bold' }}>CHỌN HẠN CHÓT</div>
+                                          <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 0)}>Hôm nay</button>
+                                          <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 1)}>Ngày mai</button>
+                                          <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 2)}>Sau 2 ngày</button>
+                                          <button className="inline-overlay-item" style={{ display: 'block', width: '100%', padding: '6px 8px', background: 'none', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }} onClick={() => handleSelectDate(task.id, 7)}>Tuần sau</button>
+                                          <div style={{ padding: '4px 8px', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '4px' }}>
+                                            <label style={{ display: 'block', fontSize: '9px', color: '#71717a', marginBottom: '4px' }}>CHỌN NGÀY CỤ THỂ</label>
+                                            <input
+                                              type="date"
+                                              className="custom-date-input"
+                                              style={{
+                                                width: '100%',
+                                                background: '#09090b',
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                borderRadius: '4px',
+                                                color: 'white',
+                                                padding: '4px',
+                                                fontSize: '11px',
+                                                outline: 'none'
+                                              }}
+                                              onChange={(e) => handleCustomDateChange(task.id, e)}
+                                              value={task.dueDate ? new Date(task.dueDate).toISOString().substr(0, 10) : ''}
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
 
@@ -1748,6 +3192,246 @@ export default function App() {
               style={{ width: '100%', padding: '10px', borderRadius: '8px', marginTop: '10px', background: 'var(--primary)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' }}
             >
               Đóng Bản Tin
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Holiday & Weekend Settings Modal */}
+      {isHolidaySettingsOpen && (
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="glass-panel fade-in" style={{ width: '100%', maxWidth: '650px', padding: '30px', position: 'relative', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <button 
+              onClick={() => setIsHolidaySettingsOpen(false)} 
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+            >
+              <X size={18} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px' }}>
+              <Settings size={22} style={{ color: '#f43f5e' }} />
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#fff', margin: 0, fontFamily: 'var(--font-title)' }}>Cấu hình Ngày Nghỉ & Ngày Lễ</h3>
+            </div>
+
+            {/* Weekend settings */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>1. Chọn Ngày Nghỉ Cuối Tuần</h4>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {[
+                  { index: 1, label: 'Thứ 2' },
+                  { index: 2, label: 'Thứ 3' },
+                  { index: 3, label: 'Thứ 4' },
+                  { index: 4, label: 'Thứ 5' },
+                  { index: 5, label: 'Thứ 6' },
+                  { index: 6, label: 'Thứ 7' },
+                  { index: 0, label: 'Chủ Nhật' }
+                ].map(day => {
+                  const isChecked = weekendDays.includes(day.index);
+                  return (
+                    <button
+                      key={day.index}
+                      type="button"
+                      onClick={() => handleToggleWeekendDay(day.index)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '10px',
+                        border: '1px solid',
+                        borderColor: isChecked ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                        background: isChecked ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                        color: isChecked ? '#ef4444' : 'var(--text-secondary)',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={isChecked} 
+                        readOnly 
+                        style={{ accentColor: '#ef4444', pointerEvents: 'none', margin: 0, width: '12px', height: '12px' }}
+                      />
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Holidays List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>2. Danh sách ngày nghỉ lễ ({holidays.length})</h4>
+              <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '10px', background: 'rgba(0, 0, 0, 0.1)' }}>
+                {holidays.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', fontStyle: 'italic' }}>Chưa cấu hình ngày nghỉ lễ nào.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {holidays.map(h => {
+                      let dateDesc = '';
+                      if (h.type === 'solar') {
+                        dateDesc = `${String(h.day).padStart(2, '0')}/${String(h.month).padStart(2, '0')} (Dương lịch)`;
+                      } else if (h.type === 'lunar') {
+                        dateDesc = `${String(h.day).padStart(2, '0')}/${String(h.month).padStart(2, '0')} (Âm lịch)`;
+                      } else if (h.type === 'single') {
+                        const parts = h.dateStr.split('-');
+                        dateDesc = `${parts[2]}/${parts[1]}/${parts[0]} (Ngày cụ thể)`;
+                      }
+                      return (
+                        <div 
+                          key={h.id} 
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            padding: '8px 12px', 
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                            fontSize: '12px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: h.color }} />
+                            <span style={{ fontWeight: '600', color: '#fff' }}>{h.name}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>— {dateDesc}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteHoliday(h.id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                            title="Xóa ngày nghỉ"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Add Holiday Form */}
+            <form onSubmit={handleAddHoliday} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(255, 255, 255, 0.01)' }}>
+              <h4 style={{ fontSize: '12.5px', fontWeight: '700', color: '#fff', margin: 0 }}>Thêm Ngày Nghỉ Lễ Mới</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>TÊN NGÀY LỄ</label>
+                  <input 
+                    type="text"
+                    required
+                    value={newHolidayName}
+                    onChange={e => setNewHolidayName(e.target.value)}
+                    placeholder="Ví dụ: Giáng Sinh..."
+                    style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', padding: '8px 12px', fontSize: '12px', outline: 'none' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>LOẠI NGÀY LỄ</label>
+                  <select 
+                    value={newHolidayType}
+                    onChange={e => setNewHolidayType(e.target.value)}
+                    style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', padding: '8px 12px', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
+                  >
+                    <option value="solar" style={{ background: '#09090b' }}>Dương lịch hàng năm</option>
+                    <option value="lunar" style={{ background: '#09090b' }}>Âm lịch hàng năm</option>
+                    <option value="single" style={{ background: '#09090b' }}>Ngày cụ thể (Chỉ một năm)</option>
+                  </select>
+                </div>
+              </div>
+
+              {newHolidayType === 'single' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>CHỌN NGÀY CỤ THỂ</label>
+                  <input 
+                    type="date"
+                    required
+                    value={newHolidayDateStr}
+                    onChange={e => setNewHolidayDateStr(e.target.value)}
+                    style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', padding: '8px 12px', fontSize: '12px', outline: 'none', width: '100%' }}
+                  />
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>CHỌN NGÀY</label>
+                    <select
+                      value={newHolidayDay}
+                      onChange={e => setNewHolidayDay(parseInt(e.target.value))}
+                      style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', padding: '8px 12px', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
+                    >
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                        <option key={d} value={d} style={{ background: '#09090b' }}>Ngày {d}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>CHỌN THÁNG</label>
+                    <select
+                      value={newHolidayMonth}
+                      onChange={e => setNewHolidayMonth(parseInt(e.target.value))}
+                      style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', padding: '8px 12px', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                        <option key={m} value={m} style={{ background: '#09090b' }}>Tháng {m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginTop: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: '600' }}>MÀU SẮC NHÃN</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[
+                      '#f43f5e', // Rose
+                      '#d97706', // Amber
+                      '#10b981', // Emerald
+                      '#8b5cf6', // Purple
+                      '#06b6d4', // Cyan
+                      '#3b82f6'  // Blue
+                    ].map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setNewHolidayColor(c)}
+                        style={{
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          backgroundColor: c,
+                          border: newHolidayColor === c ? '2px solid #fff' : '2px solid transparent',
+                          boxShadow: newHolidayColor === c ? '0 0 8px ' + c : 'none',
+                          cursor: 'pointer',
+                          padding: 0,
+                          transition: 'all 0.2s ease'
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <button 
+                  type="submit"
+                  className="user-switcher-wrap"
+                  style={{ padding: '8px 20px', borderRadius: '8px', background: 'var(--primary)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s', fontSize: '12px' }}
+                >
+                  Thêm Ngày Nghỉ
+                </button>
+              </div>
+            </form>
+
+            <button 
+              type="button"
+              onClick={() => setIsHolidaySettingsOpen(false)}
+              className="user-switcher-wrap"
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', marginTop: '10px', background: 'rgba(255, 255, 255, 0.05)', color: '#fff', border: '1px solid rgba(255, 255, 255, 0.08)', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s', textAlign: 'center' }}
+            >
+              Đóng Cài Đặt
             </button>
           </div>
         </div>

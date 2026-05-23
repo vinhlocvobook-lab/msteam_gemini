@@ -781,7 +781,8 @@ body {
   border-radius: 4px;
 }
 
-.task-card:hover .card-delete-btn {
+.task-card:hover .card-delete-btn,
+.kpi-card:hover .card-delete-btn {
   opacity: 1;
 }
 
@@ -2164,4 +2165,355 @@ body {
   color: #fca5a5;
   font-weight: 600;
 }
+
+
+/* ==========================================
+ * 6. PREMIUM VISUAL TASK CALENDAR CSS
+ * ========================================== */
+
+.calendar-dashboard {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 24px;
+  width: 100%;
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 1024px) {
+  .calendar-dashboard {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Time Filters Panel Left */
+.time-filter-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.time-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-filter-sec-title {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-title);
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  margin-bottom: 4px;
+  padding-left: 6px;
+}
+
+.time-filter-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+}
+
+.time-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #fff;
+}
+
+.time-filter-btn.active {
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(139, 92, 246, 0.25);
+  color: #c084fc;
+  font-weight: 600;
+}
+
+.time-filter-count {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+
+.time-filter-btn.active .time-filter-count {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c084fc;
+}
+
+/* Calendar Grid Right */
+.calendar-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 16px;
+}
+
+.calendar-month-title {
+  font-family: var(--font-title);
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-nav-group {
+  display: flex;
+  gap: 6px;
+}
+
+.calendar-nav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.calendar-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.calendar-weekdays-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: 8px;
+}
+
+.calendar-days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: minmax(110px, 1fr);
+  gap: 8px;
+}
+
+.calendar-day-cell {
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 110px;
+  transition: all 0.2s;
+  overflow: hidden;
+}
+
+.calendar-day-cell:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.calendar-day-cell.today {
+  background: rgba(139, 92, 246, 0.03);
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+.calendar-day-cell.other-month {
+  opacity: 0.3;
+}
+
+.calendar-day-number {
+  font-family: var(--font-title);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.calendar-day-cell.today .calendar-day-number {
+  color: #c084fc;
+}
+
+.calendar-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.calendar-task-list::-webkit-scrollbar {
+  width: 2px;
+}
+.calendar-task-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.calendar-task-item {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
+}
+
+.calendar-task-item.high {
+  background: rgba(239, 68, 68, 0.08);
+  border-left-color: var(--danger);
+  color: #fca5a5;
+}
+.calendar-task-item.medium {
+  background: rgba(245, 158, 11, 0.08);
+  border-left-color: var(--warning);
+  color: #fde047;
+}
+.calendar-task-item.low {
+  background: rgba(16, 185, 129, 0.08);
+  border-left-color: var(--success);
+  color: #a7f3d0;
+}
+
+.calendar-task-item:hover {
+  transform: translateX(2px);
+  filter: brightness(1.15);
+}
+
+.filtered-tasks-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.filtered-tasks-title {
+  font-family: var(--font-title);
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filtered-tasks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.calendar-day-cell.active-range-highlight {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.25) inset, 0 0 8px rgba(139, 92, 246, 0.1) !important;
+  background: rgba(139, 92, 246, 0.05) !important;
+}
+
+#custom-date-picker:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+#custom-date-picker:focus {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+}
+
+.custom-range-input {
+  transition: all 0.2s ease !important;
+}
+
+.custom-range-input:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.custom-range-input:focus {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* ==========================================
+ * 7. WEEKEND & HOLIDAY PREMIUM STYLING CSS
+ * ========================================== */
+
+.calendar-day-cell.weekend {
+  background: rgba(239, 68, 68, 0.02) !important;
+  border-color: rgba(239, 68, 68, 0.06) !important;
+}
+
+.calendar-day-cell.weekend:hover {
+  background: rgba(239, 68, 68, 0.04) !important;
+  border-color: rgba(239, 68, 68, 0.12) !important;
+}
+
+.calendar-day-cell.weekend .calendar-day-number {
+  color: #ef4444 !important;
+  opacity: 0.85;
+}
+
+.calendar-day-cell.holiday {
+  background: rgba(244, 63, 94, 0.06) !important;
+  border-color: rgba(244, 63, 94, 0.22) !important;
+}
+
+.calendar-day-cell.holiday:hover {
+  background: rgba(244, 63, 94, 0.1) !important;
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+
+.calendar-day-cell.holiday .calendar-day-number {
+  color: #f43f5e !important;
+  font-weight: 800 !important;
+}
+
+.calendar-holiday-tag {
+  font-size: 8.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-top: auto;
+  text-align: center;
+}
+
+
+
 
