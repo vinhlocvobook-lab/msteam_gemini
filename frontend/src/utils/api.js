@@ -169,5 +169,17 @@ export const api = {
   // MS Graph Picker APIs
   getMsTeams: () => apiFetch('/api/sync/ms-teams'),
   getMsChannels: (teamId) => apiFetch(`/api/sync/ms-teams/${teamId}/channels`),
-  getMsChats: () => apiFetch('/api/sync/ms-chats')
+  getMsChats: () => apiFetch('/api/sync/ms-chats'),
+
+  // Notifications APIs
+  getNotifications: (options = {}) => apiFetch('/api/notifications', options),
+  markNotificationAsRead: (notificationId) => apiFetch(`/api/notifications/read/${notificationId}`, {
+    method: 'PUT'
+  }),
+  markAllNotificationsAsRead: () => apiFetch('/api/notifications/read-all', {
+    method: 'PUT'
+  }),
+  deleteNotification: (notificationId) => apiFetch(`/api/notifications/${notificationId}`, {
+    method: 'DELETE'
+  })
 };

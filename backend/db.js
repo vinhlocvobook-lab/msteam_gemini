@@ -190,6 +190,68 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 10.1. Create overdue_logs table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS overdue_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        task_id VARCHAR(255) NOT NULL,
+        task_title VARCHAR(500) NOT NULL,
+        assignees VARCHAR(1000),
+        due_date DATETIME NOT NULL,
+        status_at_log VARCHAR(50) NOT NULL,
+        resolution_date DATETIME DEFAULT NULL,
+        completed_by_user_id VARCHAR(255) DEFAULT NULL,
+        logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (completed_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+        INDEX idx_ol_task_id (task_id),
+        INDEX idx_ol_logged_at (logged_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 10.2. Create notifications table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        task_id VARCHAR(255),
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        is_read TINYINT(1) DEFAULT 0,
+        type VARCHAR(50) DEFAULT 'reminder',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        INDEX idx_notif_user_read (user_id, is_read),
+        INDEX idx_notif_created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 10.3. Migration: Add columns to tasks if not exists
+    const [columns] = await connection.query("SHOW COLUMNS FROM tasks");
+    const colNames = columns.map(c => c.Field);
+
+    if (!colNames.includes('reminder_before_minutes')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN reminder_before_minutes INT DEFAULT NULL");
+      console.log("[DATABASE MIGRATION] Added column reminder_before_minutes to tasks");
+    }
+    if (!colNames.includes('reminder_sent')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN reminder_sent TINYINT DEFAULT 0");
+      console.log("[DATABASE MIGRATION] Added column reminder_sent to tasks");
+    }
+    if (!colNames.includes('overdue_logged')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN overdue_logged TINYINT DEFAULT 0");
+      console.log("[DATABASE MIGRATION] Added column overdue_logged to tasks");
+    }
+
+    // 10.4. Migration: Add index to tasks if not exists
+    const [indexes] = await connection.query("SHOW INDEX FROM tasks");
+    const idxNames = indexes.map(i => i.Key_name);
+    if (!idxNames.includes('idx_tasks_due_status_rem')) {
+      await connection.query("CREATE INDEX idx_tasks_due_status_rem ON tasks (due_date, status, reminder_sent, overdue_logged)");
+      console.log("[DATABASE MIGRATION] Created composite index idx_tasks_due_status_rem on tasks");
+    }
+
     console.log('[DATABASE] All tables are bootstrapped successfully.');
 
     // 11. Seeding default users if database is empty

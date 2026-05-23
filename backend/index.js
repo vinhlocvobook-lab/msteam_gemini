@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { initializeDatabase } from './db.js';
+import { startScheduler } from './services/scheduler.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -10,6 +11,7 @@ import userRoutes from './routes/users.js';
 import taskRoutes from './routes/tasks.js';
 import syncRoutes from './routes/sync.js';
 import adminRoutes from './routes/admin.js';
+import notificationRoutes from './routes/notifications.js';
 
 dotenv.config();
 
@@ -55,6 +57,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api', syncRoutes); // Matches /api/webhooks/teams, /api/sync/poll-teams, etc.
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -75,6 +78,9 @@ async function startServer() {
   try {
     console.log('[SYSTEM] Initializing server database bootstrap...');
     await initializeDatabase();
+    
+    // Start background scheduler service
+    startScheduler();
     
     app.listen(PORT, () => {
       console.log(`[SYSTEM] 🚀 Synapse backend server is running on http://localhost:${PORT}`);

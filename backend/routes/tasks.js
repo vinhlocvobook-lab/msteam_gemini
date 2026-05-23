@@ -147,6 +147,7 @@ router.get('/', authenticateAppToken, async (req, res) => {
         status: t.status,
         priority: t.priority,
         dueDate: t.due_date,
+        reminderBeforeMinutes: t.reminder_before_minutes,
         creator: creator,
         assignees: taskAssignees,
         tags: taskTags,
@@ -179,6 +180,7 @@ router.post('/', authenticateAppToken, async (req, res) => {
     status = 'todo',
     priority = 'medium',
     dueDate,
+    reminderBeforeMinutes,
     assigneeIds = [], // Array of user IDs
     tags = [],
     creatorId,
@@ -246,10 +248,10 @@ router.post('/', authenticateAppToken, async (req, res) => {
   try {
     // 1. Insert base task with primary link fields for backward compatibility
     await pool.query(
-      `INSERT INTO tasks (id, title, description, status, priority, due_date, creator_id, 
+      `INSERT INTO tasks (id, title, description, status, priority, due_date, reminder_before_minutes, creator_id, 
                           teams_link, channel_link, chat_link, teams_id, channel_id, chat_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [taskId, title, description, status, priority, parsedDueDate, resolvedCreator,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [taskId, title, description, status, priority, parsedDueDate, reminderBeforeMinutes !== undefined ? reminderBeforeMinutes : null, resolvedCreator,
        legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId]
     );
 
@@ -370,11 +372,27 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
       const val = updates.dueDate ? new Date(updates.dueDate) : null;
       values.push(val);
       
-      const dateStr = val ? val.toLocaleDateString('vi-VN') : 'vô thời hạn';
-      // Compare dates safely
-      const curDateStr = current.due_date ? new Date(current.due_date).toLocaleDateString('vi-VN') : 'vô thời hạn';
+      const dateStr = val ? val.toLocaleString('vi-VN') : 'vô thời hạn';
+      const curDateStr = current.due_date ? new Date(current.due_date).toLocaleString('vi-VN') : 'vô thời hạn';
       if (dateStr !== curDateStr) {
         await writeLog(req.user.name, `đã đổi hạn chót của "${current.title}" thành [${dateStr}]`, 'update');
+        
+        // Reset notification flags when deadline is moved to the future
+        if (val && val > new Date()) {
+          fields.push('reminder_sent = 0');
+          fields.push('overdue_logged = 0');
+        }
+      }
+    }
+
+    if (updates.hasOwnProperty('reminderBeforeMinutes')) {
+      fields.push('reminder_before_minutes = ?');
+      values.push(updates.reminderBeforeMinutes);
+      if (updates.reminderBeforeMinutes !== current.reminder_before_minutes) {
+        const dueDateVal = current.due_date ? new Date(current.due_date) : null;
+        if (dueDateVal && dueDateVal > new Date()) {
+          fields.push('reminder_sent = 0');
+        }
       }
     }
 
@@ -496,6 +514,16 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
     if (fields.length > 0) {
       values.push(taskId);
       await pool.query(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, values);
+    }
+
+    // 2.5. Update overdue logs if status changes to done
+    if (updates.hasOwnProperty('status') && updates.status === 'done') {
+      await pool.query(
+        `UPDATE overdue_logs 
+         SET resolution_date = NOW(), completed_by_user_id = ? 
+         WHERE task_id = ? AND resolution_date IS NULL`,
+         [req.user.id, taskId]
+      );
     }
 
     // 3. Update assignees if supplied

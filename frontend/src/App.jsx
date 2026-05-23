@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, Bell, Check, Trash2, BellOff } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
@@ -19,6 +19,10 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false); // Turn off simulation by default for DB sync stability
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'mine'
+
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const notifDropdownRef = useRef(null);
 
   const simulationIntervalRef = useRef(null);
   const microsoftPopupRef = useRef(null);
@@ -75,6 +79,50 @@ export default function App() {
 
     verifySession();
   }, []);
+
+  // Hook for clicking outside of notification dropdown to close it
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target)) {
+        setIsNotificationsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Polling notifications loop with AbortController memory cleanup
+  useEffect(() => {
+    if (isLoggedIn) {
+      const controller = new AbortController();
+      
+      const fetchNotifications = async (signal) => {
+        try {
+          const data = await api.getNotifications({ signal });
+          setNotifications(data);
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error('[NOTIF SYNC ERROR] Failed loading notifications:', err.message);
+          }
+        }
+      };
+
+      fetchNotifications(controller.signal);
+
+      const intervalId = setInterval(() => {
+        fetchNotifications(controller.signal);
+      }, 30000);
+
+      return () => {
+        clearInterval(intervalId);
+        controller.abort();
+      };
+    } else {
+      setNotifications([]);
+    }
+  }, [isLoggedIn]);
 
   // ───────────────────────────────────────────────
   // DATA POLLING LOOP
@@ -247,6 +295,50 @@ export default function App() {
       alert('Lỗi thu hồi phiên: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ───────────────────────────────────────────────
+  // NOTIFICATION UTILITIES
+  // ───────────────────────────────────────────────
+  const handleNotificationClick = async (notif) => {
+    if (!notif.is_read) {
+      try {
+        await api.markNotificationAsRead(notif.id);
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: 1 } : n));
+      } catch (err) {
+        console.error('Lỗi khi đánh dấu thông báo đã đọc:', err.message);
+      }
+    }
+
+    if (notif.task_id) {
+      const foundTask = tasks.find(t => t.id === notif.task_id);
+      if (foundTask) {
+        setSelectedTask(foundTask);
+      } else {
+        alert('Công việc này không tồn tại hoặc đã bị xóa.');
+      }
+    }
+
+    setIsNotificationsOpen(false);
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    try {
+      await api.markAllNotificationsAsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+    } catch (err) {
+      alert('Lỗi đánh dấu đọc tất cả thông báo: ' + err.message);
+    }
+  };
+
+  const handleDeleteNotification = async (e, notifId) => {
+    e.stopPropagation();
+    try {
+      await api.deleteNotification(notifId);
+      setNotifications(prev => prev.filter(n => n.id !== notifId));
+    } catch (err) {
+      alert('Không thể xóa thông báo: ' + err.message);
     }
   };
 
@@ -545,6 +637,85 @@ export default function App() {
 
         {/* Header Actions */}
         <div className="header-actions">
+
+          {/* Notification Bell Component */}
+          <div className="notif-container" ref={notifDropdownRef}>
+            <button
+              className={`notif-bell-btn ${isNotificationsOpen ? 'active' : ''}`}
+              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              title="Thông báo nhắc nhở & quá hạn"
+            >
+              <Bell size={16} />
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="notif-badge">
+                  {notifications.filter(n => !n.is_read).length}
+                </span>
+              )}
+            </button>
+
+            {isNotificationsOpen && (
+              <div className="notif-dropdown">
+                <div className="notif-header">
+                  <h3>Thông báo</h3>
+                  {notifications.filter(n => !n.is_read).length > 0 && (
+                    <button onClick={handleMarkAllNotificationsAsRead} className="notif-clear-btn">
+                      <Check size={12} />
+                      Đọc tất cả
+                    </button>
+                  )}
+                </div>
+
+                <div className="notif-list">
+                  {notifications.length === 0 ? (
+                    <div className="notif-empty">
+                      <BellOff size={24} style={{ color: 'var(--text-muted)' }} />
+                      <span>Không có thông báo nào dành cho bạn.</span>
+                    </div>
+                  ) : (
+                    notifications.map(notif => {
+                      const isOverdue = notif.type === 'overdue';
+                      const formattedTime = new Date(notif.created_at).toLocaleString('vi-VN', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      });
+
+                      return (
+                        <div
+                          key={notif.id}
+                          className={`notif-item ${notif.is_read ? '' : 'unread'}`}
+                          onClick={() => handleNotificationClick(notif)}
+                        >
+                          <div className={`notif-icon-box ${isOverdue ? 'overdue' : 'reminder'}`}>
+                            <AlertTriangle size={14} />
+                          </div>
+
+                          <div className="notif-content">
+                            <div className="notif-title">
+                              {isOverdue ? '⚠️ Quá hạn công việc' : '⏰ Nhắc nhở hạn chót'}
+                            </div>
+                            <div className="notif-text">
+                              {notif.message}
+                            </div>
+                            <span className="notif-time">{formattedTime}</span>
+                          </div>
+
+                          <button
+                            className="notif-delete-btn"
+                            onClick={(e) => handleDeleteNotification(e, notif.id)}
+                            title="Xóa thông báo"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Synchronize Manual Polling Trigger */}
           <button

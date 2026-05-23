@@ -27,8 +27,19 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
   });
   
   const [priority, setPriority] = useState(task.priority || 'medium');
-  const [dueDate, setDueDate] = useState(
-    task.dueDate ? new Date(task.dueDate).toISOString().substr(0, 10) : ''
+  const formatDateTimeLocal = (dateString) => {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return '';
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const [dueDate, setDueDate] = useState(() => formatDateTimeLocal(task.dueDate));
+  const [reminderBeforeMinutes, setReminderBeforeMinutes] = useState(
+    task.reminderBeforeMinutes !== undefined && task.reminderBeforeMinutes !== null
+      ? task.reminderBeforeMinutes
+      : 30
   );
   
   // Teams Integration local states (1-to-N upgrade)
@@ -216,7 +227,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
 
   const handleSave = () => {
     const selectedAssigneeObjects = teamMembers.filter(u => assigneeIds.includes(u.id));
-    const parsedDate = dueDate ? new Date(dueDate + 'T17:00:00') : null;
+    const parsedDate = dueDate ? new Date(dueDate) : null;
 
     onSave(task.id, {
       title: title.trim() || 'Nhiệm vụ không tên',
@@ -225,6 +236,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       assignees: selectedAssigneeObjects,
       priority,
       dueDate: parsedDate,
+      reminderBeforeMinutes: reminderBeforeMinutes === -1 ? null : reminderBeforeMinutes,
       tags,
       comments,
       teamsLinks
@@ -408,11 +420,34 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 Hạn chót
               </label>
               <input 
-                type="date"
+                type="datetime-local"
                 className="modal-select"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
+            </div>
+
+            {/* Reminder Config */}
+            <div className="modal-field">
+              <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ShieldAlert size={12} />
+                Nhắc nhở
+              </label>
+              <select 
+                className="modal-select" 
+                value={reminderBeforeMinutes !== null ? reminderBeforeMinutes : -1} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setReminderBeforeMinutes(val === '-1' ? null : Number(val));
+                }}
+              >
+                <option value="-1">Không nhắc nhở</option>
+                <option value="15">Trước 15 phút</option>
+                <option value="30">Trước 30 phút (Mặc định)</option>
+                <option value="60">Trước 1 giờ</option>
+                <option value="120">Trước 2 giờ</option>
+                <option value="1440">Trước 1 ngày</option>
+              </select>
             </div>
 
             {/* Microsoft Teams Sync Integration (1-to-N upgraded) */}
