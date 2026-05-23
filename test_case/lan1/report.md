@@ -174,4 +174,34 @@
       "assignee_avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80"
     }
   ]
-}\n```\n\n\n## ☀️ Nội dung Bản tin chào buổi sáng AI (HTML Generated Content)\n\n> [!NOTE]\n> Dưới đây là nội dung chi tiết bản tin sáng được AI tổng hợp tự động dựa trên các công việc trễ hạn và khẩn cấp của Võ Vĩnh Lộc:\n\n```html\n<p>☀️ <strong>Chào Võ Vĩnh Lộc! Chúc bạn một ngày mới đầy năng lượng và làm việc hiệu quả.</strong></p><p>Dưới đây là tóm tắt tiến độ công việc dành cho bạn:</p><p>🚨 <strong>Công việc ĐÃ QUÁ HẠN:</strong></p><ul><li><strong>Tối ưu hóa API Core và kết nối database</strong> (Hạn chót: <span style="color: #ef4444;">23/5/2026 11:15</span>)</li><li><strong>xin báo giá máy server HP cho anh Huân</strong> (Hạn chót: <span style="color: #ef4444;">22/5/2026 19:00</span>)</li></ul><p><em>👉 Hãy ưu tiên xử lý các công việc quá hạn này ngay lập tức để không ảnh hưởng đến tiến độ chung của nhóm.</em></p><p>📅 <strong>Công việc SẮP ĐẾN HẠN &amp; ĐANG THEO DÕI:</strong></p><ul><li><strong>Thiết kế giao diện Landing Page (Mobile & Desktop)</strong> (Hạn: 24/5/2026 02:31 | Ưu tiên: Khẩn cấp)</li></ul><hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 12px 0;" /><p>💡 <strong>Lời khuyên từ Trợ lý Synapse AI:</strong></p><p>Hôm nay bạn nên dành buổi sáng để tập trung dứt điểm việc <strong>"Tối ưu hóa API Core và kết nối database"</strong>. Sau đó mới xử lý các việc tiếp theo để giảm tải áp lực deadline.</p>\n```\n\n\n---\n*Báo cáo được tạo tự động bởi Antigravity AI Coding Assistant - Đội ngũ Google DeepMind.*\n
+}
+```
+
+
+## ☀️ Nội dung Bản tin chào buổi sáng AI (HTML Generated Content)
+
+> [!NOTE]
+> Dưới đây là nội dung chi tiết bản tin sáng được AI tổng hợp tự động dựa trên các công việc trễ hạn và khẩn cấp của Võ Vĩnh Lộc:
+
+```markdown
+☀️ **Chào Võ Vĩnh Lộc! Chúc bạn một ngày mới đầy năng lượng và làm việc hiệu quả.**
+
+Dưới đây là tóm tắt tiến độ công việc dành cho bạn:
+
+🚨 **Công việc ĐÃ QUÁ HẠN:**
+* **Tối ưu hóa API Core và kết nối database** (Hạn chót: **23/5/2026 11:15**)
+* **xin báo giá máy server HP cho anh Huân** (Hạn chót: **22/5/2026 19:00**)
+
+👉 *Hãy ưu tiên xử lý các công việc quá hạn này ngay lập tức để không ảnh hưởng đến tiến độ chung của nhóm.*
+
+📅 **Công việc SẮP ĐẾN HẠN & ĐANG THEO DÕI:**
+* **Thiết kế giao diện Landing Page (Mobile & Desktop)** (Hạn: **24/5/2026 02:31** | Ưu tiên: **Khẩn cấp**)
+
+---
+💡 **Lời khuyên từ Trợ lý Synapse AI:**
+Hôm nay bạn nên dành buổi sáng để tập trung dứt điểm việc **"Tối ưu hóa API Core và kết nối database"**. Sau đó mới xử lý các việc tiếp theo để giảm tải áp lực deadline.
+```
+
+
+---
+*Báo cáo được tạo tự động bởi Antigravity AI Coding Assistant - Đội ngũ Google DeepMind.*
