@@ -276,6 +276,9 @@ router.get('/', authenticateAppToken, async (req, res) => {
         status: t.status,
         priority: t.priority,
         dueDate: t.due_date,
+        startDate: t.start_date,
+        actualStartDate: t.actual_start_date,
+        createdAt: t.created_at,
         reminderBeforeMinutes: t.reminder_before_minutes,
         creator: creator,
         assignees: taskAssignees,
@@ -308,6 +311,7 @@ router.post('/', authenticateAppToken, async (req, res) => {
     description = '',
     status = 'todo',
     priority = 'medium',
+    startDate,
     dueDate,
     reminderBeforeMinutes,
     assigneeIds = [], // Array of user IDs
@@ -328,7 +332,9 @@ router.post('/', authenticateAppToken, async (req, res) => {
 
   const taskId = `task-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const resolvedCreator = creatorId || req.user.id;
+  const parsedStartDate = startDate ? new Date(startDate) : null;
   const parsedDueDate = dueDate ? new Date(dueDate) : null;
+  const actualStartDate = status === 'in_progress' ? new Date() : null;
 
   // Resolve the primary link for legacy columns
   let primaryLink = null;
@@ -377,10 +383,10 @@ router.post('/', authenticateAppToken, async (req, res) => {
   try {
     // 1. Insert base task with primary link fields for backward compatibility
     await pool.query(
-      `INSERT INTO tasks (id, title, description, status, priority, due_date, reminder_before_minutes, creator_id, 
+      `INSERT INTO tasks (id, title, description, status, priority, start_date, actual_start_date, due_date, reminder_before_minutes, creator_id, 
                           teams_link, channel_link, chat_link, teams_id, channel_id, chat_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [taskId, title, description, status, priority, parsedDueDate, reminderBeforeMinutes !== undefined ? reminderBeforeMinutes : null, resolvedCreator,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [taskId, title, description, status, priority, parsedStartDate, actualStartDate, parsedDueDate, reminderBeforeMinutes !== undefined ? reminderBeforeMinutes : null, resolvedCreator,
        legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId]
     );
 
@@ -486,6 +492,12 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
       if (updates.status !== current.status) {
         const colNames = { todo: 'Cần làm', in_progress: 'Đang làm', review: 'Đang review', done: 'Hoàn thành' };
         await writeLog(req.user.name, `đã chuyển "${current.title}" sang [${colNames[updates.status] || updates.status}]`, 'move');
+
+        // Tự động ghi nhận actual_start_date nếu chuyển sang in_progress và chưa được set
+        if (updates.status === 'in_progress' && !current.actual_start_date) {
+          fields.push('actual_start_date = ?');
+          values.push(new Date());
+        }
       }
     }
     if (updates.hasOwnProperty('priority')) {
@@ -512,6 +524,12 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
           fields.push('overdue_logged = 0');
         }
       }
+    }
+
+    if (updates.hasOwnProperty('startDate')) {
+      fields.push('start_date = ?');
+      const val = updates.startDate ? new Date(updates.startDate) : null;
+      values.push(val);
     }
 
     if (updates.hasOwnProperty('reminderBeforeMinutes')) {

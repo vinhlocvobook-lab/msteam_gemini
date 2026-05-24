@@ -105,6 +105,8 @@ export async function initializeDatabase() {
         description TEXT,
         status VARCHAR(50) DEFAULT 'todo',
         priority VARCHAR(50) DEFAULT 'medium',
+        start_date DATETIME DEFAULT NULL,
+        actual_start_date DATETIME DEFAULT NULL,
         due_date DATETIME,
         creator_id VARCHAR(255) NOT NULL,
         teams_link VARCHAR(1000),
@@ -291,6 +293,14 @@ export async function initializeDatabase() {
     if (!colNames.includes('overdue_logged')) {
       await connection.query("ALTER TABLE tasks ADD COLUMN overdue_logged TINYINT DEFAULT 0");
       console.log("[DATABASE MIGRATION] Added column overdue_logged to tasks");
+    }
+    if (!colNames.includes('start_date')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN start_date DATETIME DEFAULT NULL");
+      console.log("[DATABASE MIGRATION] Added column start_date to tasks");
+    }
+    if (!colNames.includes('actual_start_date')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN actual_start_date DATETIME DEFAULT NULL");
+      console.log("[DATABASE MIGRATION] Added column actual_start_date to tasks");
     }
 
     // 10.4. Migration: Add index to tasks if not exists

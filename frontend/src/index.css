@@ -2514,6 +2514,70 @@ body {
   text-align: center;
 }
 
+/* ==========================================
+ * 8. DURATION TIMELINE & OVERDUE WARNING CSS
+ * ========================================== */
+
+.calendar-task-item.task-span-start {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-right: -8px;
+  position: relative;
+  z-index: 10;
+}
+
+.calendar-task-item.task-span-middle {
+  border-radius: 0;
+  margin-left: -8px;
+  margin-right: -8px;
+  position: relative;
+  z-index: 5;
+}
+
+.calendar-task-item.task-span-end {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  margin-left: -8px;
+  position: relative;
+  z-index: 10;
+}
+
+.calendar-task-item.task-span-single {
+  border-radius: 6px;
+}
+
+/* Overdue Drag Warning Styling - Red Striped Background */
+.calendar-task-item.task-overdue-drag {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(239, 68, 68, 0.12),
+    rgba(239, 68, 68, 0.12) 8px,
+    rgba(239, 68, 68, 0.2) 8px,
+    rgba(239, 68, 68, 0.2) 16px
+  ) !important;
+  border-left-color: #ef4444 !important;
+  border-right-color: #ef4444 !important;
+  color: #fca5a5 !important;
+  animation: pulseOverdue 2.5s infinite ease-in-out;
+}
+
+/* Completed tasks fade styling */
+.calendar-task-item.task-completed-fade {
+  opacity: 0.45;
+  filter: grayscale(0.3);
+  text-shadow: none;
+}
+
+@keyframes pulseOverdue {
+  0% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.35); }
+  100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.2); }
+}
+
 
 
 

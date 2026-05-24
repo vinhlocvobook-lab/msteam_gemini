@@ -61,6 +61,13 @@ export default function App() {
   const simulationIntervalRef = useRef(null);
   const microsoftPopupRef = useRef(null);
 
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const teamMembersRef = useRef(teamMembers);
+  teamMembersRef.current = teamMembers;
+  const activeUserRef = useRef(activeUser);
+  activeUserRef.current = activeUser;
+
   const [weekendDays, setWeekendDays] = useState([0, 6]);
   const [holidays, setHolidays] = useState([]);
   const [isHolidaySettingsOpen, setIsHolidaySettingsOpen] = useState(false);
@@ -527,7 +534,13 @@ export default function App() {
     }
 
     simulationIntervalRef.current = setInterval(() => {
-      const simCandidates = teamMembers.filter(u => u.id !== activeUser.id);
+      const currentTeamMembers = teamMembersRef.current || [];
+      const currentActiveUser = activeUserRef.current;
+      const currentTasks = tasksRef.current || [];
+
+      if (!currentActiveUser) return;
+
+      const simCandidates = currentTeamMembers.filter(u => u.id !== currentActiveUser.id);
       if (simCandidates.length === 0) return;
       const simUser = simCandidates[Math.floor(Math.random() * simCandidates.length)];
 
@@ -539,9 +552,46 @@ export default function App() {
         const rand = Math.random();
 
         try {
-          if (rand < 0.4 && tasks.length > 0) {
-            // Simulate random task movement by triggering a mock update
-            const inProgressTasks = tasks.filter(t => t.status !== 'done');
+          if (rand < 0.25) {
+            // 1. Simulate CREATE a new random task!
+            const mockTitles = [
+              "Phân tích bảo mật và quét mã độc hệ thống",
+              "Thiết kế banner sự kiện ra mắt tính năng mới",
+              "Viết tài liệu hướng dẫn sử dụng API chi tiết",
+              "Tối ưu hóa tốc độ tải trang chủ (Vite + React)",
+              "Nâng cấp hệ thống log và giám sát lỗi tự động",
+              "Họp hàng tuần thảo luận tiến độ Sprint 3",
+              "Chuẩn bị tài liệu thuyết trình cho đối tác",
+              "Tích hợp cổng thanh toán trực tuyến nâng cao"
+            ];
+            const randomTitle = mockTitles[Math.floor(Math.random() * mockTitles.length)];
+            const randomPrio = ['high', 'medium', 'low'][Math.floor(Math.random() * 3)];
+            
+            // Lên lịch: ngày bắt đầu là hôm nay, hạn chót là 2-4 ngày tới
+            const sDate = new Date();
+            const dDate = new Date();
+            dDate.setDate(dDate.getDate() + Math.floor(Math.random() * 3) + 2); // 2-4 days in future
+            
+            // Gán ngẫu nhiên cho một thành viên
+            const assignee = simCandidates[Math.floor(Math.random() * simCandidates.length)];
+            const tagsList = ["simulation", "auto", "teams"][Math.floor(Math.random() * 3)];
+
+            await api.createTask({
+              title: randomTitle,
+              description: `Công việc được tự động tạo lập bởi trình mô phỏng cộng tác của thành viên [${simUser.name}].`,
+              status: 'todo',
+              priority: randomPrio,
+              startDate: sDate,
+              dueDate: dDate,
+              assigneeIds: [assignee.id],
+              tags: [tagsList],
+              creatorId: simUser.id
+            });
+            fetchDbData();
+
+          } else if (rand >= 0.25 && rand < 0.55 && currentTasks.length > 0) {
+            // 2. Simulate random task movement by triggering a mock update
+            const inProgressTasks = currentTasks.filter(t => t.status !== 'done');
             if (inProgressTasks.length > 0) {
               const target = inProgressTasks[Math.floor(Math.random() * inProgressTasks.length)];
               const nextStatusMap = { todo: 'in_progress', in_progress: 'review', review: 'done' };
@@ -550,9 +600,9 @@ export default function App() {
               await api.updateTask(target.id, { status: nextStatus, assigneeIds: target.assignees.map(a => a.id) });
               fetchDbData();
             }
-          } else if (rand < 0.8) {
-            // Simulate AI sync incoming Teams chat message using mock sync simulator!
-            const myTasks = tasks.filter(t => t.status !== 'done');
+          } else if (rand >= 0.55 && rand < 0.85) {
+            // 3. Simulate AI sync incoming Teams chat message using mock sync simulator!
+            const myTasks = currentTasks.filter(t => t.status !== 'done');
             if (myTasks.length > 0) {
               const target = myTasks[Math.floor(Math.random() * myTasks.length)];
               const texts = [
@@ -579,7 +629,7 @@ export default function App() {
       if (timeoutId) clearTimeout(timeoutId);
     };
 
-  }, [isSimulating, isLoggedIn, tasks, teamMembers]);
+  }, [isSimulating, isLoggedIn]);
 
   // Filter tasks based on filter dropdown
   const filteredTasks = tasks.filter(task => {
@@ -896,6 +946,37 @@ export default function App() {
     });
   };
 
+  const isTaskActiveOnDate = (task, date) => {
+    if (!task.dueDate) return false;
+    
+    const cellTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const endTime = new Date(new Date(task.dueDate).getFullYear(), new Date(task.dueDate).getMonth(), new Date(task.dueDate).getDate()).getTime();
+    
+    let startTime;
+    if (task.startDate) {
+      startTime = new Date(new Date(task.startDate).getFullYear(), new Date(task.startDate).getMonth(), new Date(task.startDate).getDate()).getTime();
+    } else {
+      const created = task.createdAt || task.created_at || new Date();
+      startTime = new Date(new Date(created).getFullYear(), new Date(created).getMonth(), new Date(created).getDate()).getTime();
+    }
+
+    // Nếu task chưa hoàn thành và đã quá hạn (dueDate < Today), ta kéo dải hiển thị tới ngày hôm nay
+    let finalEndTime = endTime;
+    const today = new Date();
+    const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    
+    if (task.status !== 'done' && endTime < todayTime) {
+      finalEndTime = todayTime;
+    }
+
+    // Đối với task đã hoàn thành, ta chỉ hiển thị duy nhất tại ngày đến hạn (dueDate) để tránh rối lịch
+    if (task.status === 'done') {
+      return cellTime === endTime;
+    }
+
+    return cellTime >= startTime && cellTime <= finalEndTime;
+  };
+
   const handleToggleWeekendDay = async (dayIndex) => {
     let nextWeekends;
     if (weekendDays.includes(dayIndex)) {
@@ -1169,7 +1250,7 @@ export default function App() {
 
           <div className="calendar-days-grid" style={{ gap: '6px', gridAutoRows: calendarViewMode === 'three_months' ? 'minmax(70px, 1fr)' : 'minmax(110px, 1fr)' }}>
             {dayCells.map((cell, idx) => {
-              const cellTasks = tasks.filter(t => t.dueDate && isSameDay(new Date(t.dueDate), cell.date));
+              const cellTasks = tasks.filter(t => isTaskActiveOnDate(t, cell.date));
               const cellIsToday = isSameDay(cell.date, new Date());
               
               const isWeekend = isWeekendDay(cell.date);
@@ -1225,20 +1306,67 @@ export default function App() {
                   </div>
                   
                   <div className="calendar-task-list" style={{ gap: '2px' }}>
-                    {cellTasks.map(t => (
-                      <div
-                        key={t.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedTask(t);
-                        }}
-                        className={`calendar-task-item ${t.priority}`}
-                        style={{ fontSize: '8.5px', padding: '2px 4px', borderRadius: '3px' }}
-                        title={`[${getPrioLabel(t.priority)}] ${t.title}`}
-                      >
-                        {t.title}
-                      </div>
-                    ))}
+                    {cellTasks.map(t => {
+                      const cellTime = new Date(cell.date.getFullYear(), cell.date.getMonth(), cell.date.getDate()).getTime();
+                      const endTime = new Date(new Date(t.dueDate).getFullYear(), new Date(t.dueDate).getMonth(), new Date(t.dueDate).getDate()).getTime();
+                      
+                      let startTime;
+                      if (t.startDate) {
+                        startTime = new Date(new Date(t.startDate).getFullYear(), new Date(t.startDate).getMonth(), new Date(t.startDate).getDate()).getTime();
+                      } else {
+                        const created = t.createdAt || t.created_at || new Date();
+                        startTime = new Date(new Date(created).getFullYear(), new Date(created).getMonth(), new Date(created).getDate()).getTime();
+                      }
+                      
+                      const today = new Date();
+                      const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+                      let finalEndTime = endTime;
+                      if (t.status !== 'done' && endTime < todayTime) {
+                        finalEndTime = todayTime;
+                      }
+
+                      const isStart = cellTime === startTime;
+                      const isEnd = cellTime === finalEndTime;
+                      const isOverdueDrag = t.status !== 'done' && cellTime > endTime;
+
+                      let spanClass = '';
+                      if (isStart && isEnd) spanClass = 'task-span-single';
+                      else if (isStart) spanClass = 'task-span-start';
+                      else if (isEnd) spanClass = 'task-span-end';
+                      else spanClass = 'task-span-middle';
+
+                      const overdueClass = isOverdueDrag ? 'task-overdue-drag' : '';
+                      const completedClass = t.status === 'done' ? 'task-completed-fade' : '';
+
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTask(t);
+                          }}
+                          className={`calendar-task-item ${t.priority} ${spanClass} ${overdueClass} ${completedClass}`}
+                          style={{ 
+                            fontSize: '8.5px', 
+                            padding: '3px 6px',
+                            margin: '1px 0',
+                            borderLeftWidth: isStart || spanClass === 'task-span-single' ? '3px' : '0px',
+                            borderRightWidth: isEnd || spanClass === 'task-span-single' ? '3px' : '0px',
+                          }}
+                          title={`[${getPrioLabel(t.priority)}] ${t.title}${isOverdueDrag ? ' (QUÁ HẠN CHƯA XONG)' : ''}`}
+                        >
+                          <span style={{ 
+                            textOverflow: 'ellipsis', 
+                            overflow: 'hidden', 
+                            whiteSpace: 'nowrap',
+                            display: 'block',
+                            textDecoration: t.status === 'done' ? 'line-through' : 'none'
+                          }}>
+                            {t.title}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                   {holiday && (
                     <div 

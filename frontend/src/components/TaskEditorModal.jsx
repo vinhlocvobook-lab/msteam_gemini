@@ -284,6 +284,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
+  const [startDate, setStartDate] = useState(() => formatDateTimeLocal(task.startDate));
   const [dueDate, setDueDate] = useState(() => formatDateTimeLocal(task.dueDate));
   const [reminderBeforeMinutes, setReminderBeforeMinutes] = useState(
     task.reminderBeforeMinutes !== undefined && task.reminderBeforeMinutes !== null
@@ -476,6 +477,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
 
   const handleSave = () => {
     const selectedAssigneeObjects = teamMembers.filter(u => assigneeIds.includes(u.id));
+    const parsedStartDate = startDate ? new Date(startDate) : null;
     const parsedDate = dueDate ? new Date(dueDate) : null;
 
     onSave(task.id, {
@@ -484,6 +486,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       status,
       assignees: selectedAssigneeObjects,
       priority,
+      startDate: parsedStartDate,
       dueDate: parsedDate,
       reminderBeforeMinutes: reminderBeforeMinutes === -1 ? null : reminderBeforeMinutes,
       tags,
@@ -731,6 +734,39 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Start Date */}
+            <div className="modal-field">
+              <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Calendar size={12} />
+                Ngày bắt đầu
+              </label>
+              <input 
+                type="datetime-local"
+                className="modal-select"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              {task.actualStartDate && (
+                <div style={{ 
+                  fontSize: '11px', 
+                  color: '#10b981', 
+                  marginTop: '6px', 
+                  fontWeight: '600', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(16, 185, 129, 0.15)',
+                  width: 'fit-content'
+                }}>
+                  <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+                  Bắt đầu thực tế: {new Date(task.actualStartDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(task.actualStartDate).toLocaleDateString('vi-VN')}
+                </div>
+              )}
             </div>
 
             {/* Due Date */}
