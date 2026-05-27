@@ -479,7 +479,8 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
     }
   };
 
-  const handleConfirmPicker = () => {
+  const handleConfirmPicker = async () => {
+    let newLink = null;
     if (pickerScope === 'channel') {
       const selectedTeam = pickerTeams.find(t => t.id === tempTeamId);
       const selectedChannel = pickerChannels.find(c => c.id === tempChannelId);
@@ -490,7 +491,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
           alert('⚠️ Kênh Microsoft Teams này đã được liên kết với công việc này rồi!');
           return;
         }
-        const newLink = {
+        newLink = {
           id: `link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           type: 'channel',
           conversationId: convId,
@@ -503,7 +504,6 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
           chatName: null,
           chatLink: null
         };
-        setTeamsLinks([...teamsLinks, newLink]);
       }
     } else {
       const selectedChat = pickerChats.find(c => c.id === tempChatId);
@@ -514,7 +514,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
           alert('⚠️ Cuộc trò chuyện này đã được liên kết với công việc này rồi!');
           return;
         }
-        const newLink = {
+        newLink = {
           id: `link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           type: 'chat',
           conversationId: convId,
@@ -527,14 +527,37 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
           chatName: selectedChat.topic || '',
           chatLink: selectedChat.webUrl || ''
         };
-        setTeamsLinks([...teamsLinks, newLink]);
+      }
+    }
+
+    if (newLink) {
+      const updatedLinks = [...teamsLinks, newLink];
+      setTeamsLinks(updatedLinks);
+      try {
+        await api.updateTask(task.id, { teamsLinks: updatedLinks });
+        // Auto refresh activities if currently active
+        if (activeTab === 'activities') {
+          loadActivities();
+        }
+      } catch (err) {
+        alert('Không thể lưu liên kết Microsoft Teams: ' + err.message);
       }
     }
     setShowPicker(false);
   };
 
-  const handleRemoveLink = (linkId) => {
-    setTeamsLinks(teamsLinks.filter(l => l.id !== linkId));
+  const handleRemoveLink = async (linkId) => {
+    const updatedLinks = teamsLinks.filter(l => l.id !== linkId);
+    setTeamsLinks(updatedLinks);
+    try {
+      await api.updateTask(task.id, { teamsLinks: updatedLinks });
+      // Auto refresh activities if currently active
+      if (activeTab === 'activities') {
+        loadActivities();
+      }
+    } catch (err) {
+      alert('Không thể cập nhật liên kết Microsoft Teams: ' + err.message);
+    }
   };
 
   const handleSave = () => {
