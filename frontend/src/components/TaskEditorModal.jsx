@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Calendar, ShieldAlert, Tag, MessageSquare, ListTodo, Plus, HelpCircle, Link, Unlink, ExternalLink, MessageCircle, ChevronDown, Search, Check } from 'lucide-react';
+import { X, User, Calendar, ShieldAlert, Tag, MessageSquare, ListTodo, Plus, HelpCircle, Link, Unlink, ExternalLink, MessageCircle, ChevronDown, Search, Check, UserPlus, UserMinus, FileText, ArrowRight, Clock } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 import { api } from '../utils/api';
 
@@ -348,6 +348,30 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
   const [comments, setComments] = useState(task.comments || []);
   const [commentInput, setCommentInput] = useState('');
 
+  // Task Activities local state (Change logs timeline)
+  const [activeTab, setActiveTab] = useState('discussion'); // 'discussion' | 'activities'
+  const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+  const loadActivities = async () => {
+    if (!task.id) return;
+    setActivitiesLoading(true);
+    try {
+      const data = await api.getTaskActivities(task.id);
+      setActivities(data);
+    } catch (err) {
+      console.error('Failed to fetch task activities:', err.message);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'activities') {
+      loadActivities();
+    }
+  }, [task.id, activeTab]);
+
   const handleAddTag = (e) => {
     if (e.key === 'Enter' || e.type === 'click') {
       e.preventDefault();
@@ -378,6 +402,11 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       };
       setComments([newComment, ...comments]);
       setCommentInput('');
+      
+      // Auto refresh activities if currently active
+      if (activeTab === 'activities') {
+        loadActivities();
+      }
     } catch (err) {
       alert('Không thể lưu bình luận: ' + err.message);
     }
@@ -580,47 +609,323 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
               />
             </div>
 
-            {/* Comments Stream */}
-            <div className="comments-container">
-              <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <MessageSquare size={13} style={{ color: 'var(--primary)' }} />
+            {/* Tab Switched Header */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              marginBottom: '16px',
+              gap: '24px',
+              paddingBottom: '2px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setActiveTab('discussion')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'discussion' ? '2px solid #a78bfa' : '2px solid transparent',
+                  color: activeTab === 'discussion' ? '#c084fc' : 'var(--text-muted)',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  padding: '8px 4px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease',
+                  outline: 'none'
+                }}
+              >
+                <MessageSquare size={13} style={{ color: activeTab === 'discussion' ? '#c084fc' : 'var(--text-muted)' }} />
                 Thảo luận ({comments.length})
-              </label>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('activities')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'activities' ? '2px solid #a78bfa' : '2px solid transparent',
+                  color: activeTab === 'activities' ? '#c084fc' : 'var(--text-muted)',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  padding: '8px 4px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease',
+                  outline: 'none'
+                }}
+              >
+                <ListTodo size={13} style={{ color: activeTab === 'activities' ? '#c084fc' : 'var(--text-muted)' }} />
+                Nhật ký hoạt động
+              </button>
+            </div>
 
-              {/* Comment Input */}
-              <form onSubmit={handlePostComment} className="comment-input-wrap">
-                <input 
-                  type="text" 
-                  className="comment-input" 
-                  value={commentInput}
-                  onChange={(e) => setCommentInput(e.target.value)}
-                  placeholder="Viết bình luận, nhấn Enter để gửi..."
-                />
-                <button type="submit" className="comment-send-btn">Gửi</button>
-              </form>
+            {activeTab === 'discussion' ? (
+              <div className="comments-container" style={{ marginTop: 0 }}>
+                {/* Comment Input */}
+                <form onSubmit={handlePostComment} className="comment-input-wrap">
+                  <input 
+                    type="text" 
+                    className="comment-input" 
+                    value={commentInput}
+                    onChange={(e) => setCommentInput(e.target.value)}
+                    placeholder="Viết bình luận, nhấn Enter để gửi..."
+                  />
+                  <button type="submit" className="comment-send-btn">Gửi</button>
+                </form>
 
-              {/* Comment List */}
-              <div className="comments-list">
-                {comments.length === 0 ? (
-                  <div style={{ padding: '16px 0', textLight: 'center', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    Chưa có thảo luận nào. Hãy bắt đầu cuộc trò chuyện!
+                {/* Comment List */}
+                <div className="comments-list">
+                  {comments.length === 0 ? (
+                    <div style={{ padding: '16px 0', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      Chưa có thảo luận nào. Hãy bắt đầu cuộc trò chuyện!
+                    </div>
+                  ) : (
+                    comments.map(c => (
+                      <div key={c.id} className="comment-card">
+                        <img src={c.author?.avatar} alt={c.author?.name} className="comment-avatar" />
+                        <div className="comment-body">
+                          <div className="comment-meta">
+                            <span className="comment-author">{c.author?.name}</span>
+                            <span className="comment-time">{c.time}</span>
+                          </div>
+                          <div className="comment-text">{c.text}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="activities-container" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                padding: '8px 0',
+                maxHeight: '400px',
+                overflowY: 'auto',
+                scrollbarWidth: 'thin',
+                position: 'relative'
+              }}>
+                {activitiesLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: '12px' }}>
+                    <div style={{ border: '2px solid rgba(255,255,255,0.05)', borderRadius: '50%', borderTop: '2px solid #8b5cf6', width: '24px', height: '24px', animation: 'spin 1s linear infinite' }}></div>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Đang tải lịch sử hoạt động...</span>
+                  </div>
+                ) : activities.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    Chưa ghi nhận hoạt động nào cho công việc này.
                   </div>
                 ) : (
-                  comments.map(c => (
-                    <div key={c.id} className="comment-card">
-                      <img src={c.author?.avatar} alt={c.author?.name} className="comment-avatar" />
-                      <div className="comment-body">
-                        <div className="comment-meta">
-                          <span className="comment-author">{c.author?.name}</span>
-                          <span className="comment-time">{c.time}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative', paddingLeft: '16px', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
+                    {activities.map((act) => {
+                      let ActionIcon = HelpCircle;
+                      let iconBgColor = 'rgba(255,255,255,0.05)';
+                      let iconColor = 'var(--text-muted)';
+
+                      if (act.action_type === 'create') {
+                        ActionIcon = Plus;
+                        iconBgColor = 'rgba(16, 185, 129, 0.15)';
+                        iconColor = '#10b981';
+                      } else if (act.action_type === 'delete') {
+                        ActionIcon = X;
+                        iconBgColor = 'rgba(244, 63, 94, 0.15)';
+                        iconColor = '#f43f5e';
+                      } else if (act.action_type === 'restore') {
+                        ActionIcon = Check;
+                        iconBgColor = 'rgba(16, 185, 129, 0.15)';
+                        iconColor = '#10b981';
+                      } else if (act.action_type === 'add_comment') {
+                        ActionIcon = MessageSquare;
+                        iconBgColor = 'rgba(59, 130, 246, 0.15)';
+                        iconColor = '#3b82f6';
+                      } else if (act.action_type === 'add_assignee') {
+                        ActionIcon = UserPlus;
+                        iconBgColor = 'rgba(139, 92, 246, 0.15)';
+                        iconColor = '#a78bfa';
+                      } else if (act.action_type === 'remove_assignee') {
+                        ActionIcon = UserMinus;
+                        iconBgColor = 'rgba(244, 63, 94, 0.15)';
+                        iconColor = '#f43f5e';
+                      } else if (act.action_type === 'add_tag') {
+                        ActionIcon = Tag;
+                        iconBgColor = 'rgba(139, 92, 246, 0.15)';
+                        iconColor = '#a78bfa';
+                      } else if (act.action_type === 'remove_tag') {
+                        ActionIcon = Tag;
+                        iconBgColor = 'rgba(244, 63, 94, 0.15)';
+                        iconColor = '#fca5a5';
+                      } else if (act.action_type === 'add_link') {
+                        ActionIcon = Link;
+                        iconBgColor = 'rgba(139, 92, 246, 0.15)';
+                        iconColor = '#a78bfa';
+                      } else if (act.action_type === 'remove_link') {
+                        ActionIcon = Unlink;
+                        iconBgColor = 'rgba(244, 63, 94, 0.15)';
+                        iconColor = '#fca5a5';
+                      } else if (act.action_type === 'update_field') {
+                        ActionIcon = FileText;
+                        iconBgColor = 'rgba(245, 158, 11, 0.15)';
+                        iconColor = '#f59e0b';
+                      }
+
+                      const dateObj = new Date(act.created_at);
+                      const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                      const dateStr = dateObj.toLocaleDateString('vi-VN');
+
+                      return (
+                        <div key={act.id} style={{ display: 'flex', gap: '14px', position: 'relative' }}>
+                          <div style={{
+                            position: 'absolute',
+                            left: '-28px',
+                            top: '2px',
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: iconBgColor,
+                            border: `1px solid ${iconColor}22`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 1
+                          }}>
+                            <ActionIcon size={12} style={{ color: iconColor }} />
+                          </div>
+
+                          <div style={{
+                            flex: 1,
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid rgba(255, 255, 255, 0.04)',
+                            borderRadius: '10px',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            transition: 'transform 0.2s ease, border 0.2s ease',
+                            cursor: 'default'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                            e.currentTarget.style.transform = 'translateX(2px)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.04)';
+                            e.currentTarget.style.transform = 'none';
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <img 
+                                src={act.user_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&q=80'} 
+                                alt={act.user_name} 
+                                style={{
+                                  width: '18px',
+                                  height: '18px',
+                                  borderRadius: '50%',
+                                  objectFit: 'cover',
+                                  border: `1.5px solid ${act.user_color || '#8b5cf6'}`
+                                }}
+                              />
+                              <span style={{ fontSize: '12px', color: '#fff', fontWeight: '500' }}>
+                                {act.user_name}
+                              </span>
+                              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                {act.description}
+                              </span>
+                            </div>
+
+                            {act.action_type === 'update_field' && act.field_changed && act.old_value !== null && act.new_value !== null && (
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                fontSize: '11px',
+                                color: 'var(--text-secondary)',
+                                background: 'rgba(255,255,255,0.01)',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(255,255,255,0.03)',
+                                width: 'fit-content',
+                                flexWrap: 'wrap'
+                              }}>
+                                <span style={{
+                                  color: '#fca5a5',
+                                  background: 'rgba(239, 68, 68, 0.08)',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid rgba(239, 68, 68, 0.12)'
+                                }}>
+                                  {act.old_value || 'Trống'}
+                                </span>
+                                <ArrowRight size={10} style={{ color: 'var(--text-muted)' }} />
+                                <span style={{
+                                  color: '#a7f3d0',
+                                  background: 'rgba(16, 185, 129, 0.08)',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid rgba(16, 185, 129, 0.12)'
+                                }}>
+                                  {act.new_value || 'Trống'}
+                                </span>
+                              </div>
+                            )}
+
+                            {act.action_type === 'add_comment' && act.new_value && (
+                              <div style={{
+                                fontSize: '11.5px',
+                                color: '#fff',
+                                background: 'rgba(255,255,255,0.03)',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                borderLeft: '2px solid #3b82f6',
+                                fontStyle: 'italic'
+                              }}>
+                                "{act.new_value}"
+                              </div>
+                            )}
+
+                            {act.action_type === 'add_tag' && act.new_value && (
+                              <span style={{
+                                fontSize: '10px',
+                                color: '#c084fc',
+                                background: 'rgba(139, 92, 246, 0.08)',
+                                border: '1px solid rgba(139, 92, 246, 0.15)',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                width: 'fit-content',
+                                fontWeight: '600'
+                              }}>
+                                #{act.new_value}
+                              </span>
+                            )}
+                            {act.action_type === 'remove_tag' && act.old_value && (
+                              <span style={{
+                                fontSize: '10px',
+                                color: '#fca5a5',
+                                background: 'rgba(244, 63, 94, 0.05)',
+                                border: '1px solid rgba(244, 63, 94, 0.1)',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                width: 'fit-content',
+                                textDecoration: 'line-through'
+                              }}>
+                                #{act.old_value}
+                              </span>
+                            )}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>
+                              <Clock size={10} />
+                              <span>{timeStr} {dateStr}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="comment-text">{c.text}</div>
-                      </div>
-                    </div>
-                  ))
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            </div>
+            )}
           </div>
 
           {/* Sidebar options column (Right) */}

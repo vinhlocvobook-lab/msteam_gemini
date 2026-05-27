@@ -15,6 +15,22 @@ async function writeLog(userName, action, type = 'info') {
   );
 }
 
+// Helper to write task-specific activity log
+async function writeTaskActivity(taskId, userId, userName, actionType, fieldChanged = null, oldValue = null, newValue = null, description) {
+  const activityId = `act-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  try {
+    await pool.query(
+      `INSERT INTO task_activities 
+       (id, task_id, user_id, user_name, action_type, field_changed, old_value, new_value, description) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [activityId, taskId, userId || null, userName, actionType, fieldChanged, oldValue, newValue, description]
+    );
+  } catch (err) {
+    console.error('[TASK ACTIVITY LOG ERROR] Failed to write task activity:', err.message);
+  }
+}
+
+
 // ───────────────────────────────────────────────
 // API: Lấy danh sách nhật ký hoạt động (Logs)
 // ───────────────────────────────────────────────
@@ -566,6 +582,7 @@ router.post('/', authenticateAppToken, async (req, res) => {
     }
 
     await writeLog(creatorName, `đã tạo công việc "${title}" và gán cho [${assigneeNames}]`, 'create');
+    await writeTaskActivity(taskId, req.user.id, creatorName, 'create', null, null, null, `đã tạo công việc và gán cho [${assigneeNames}]`);
 
     res.status(201).json({ message: 'Tạo công việc thành công!', taskId });
 
@@ -599,11 +616,15 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       values.push(updates.title);
       if (updates.title !== current.title) {
         await writeLog(req.user.name, `đã đổi tiêu đề công việc thành "${updates.title}"`, 'update');
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'title', current.title, updates.title, `đã đổi tiêu đề công việc thành "${updates.title}"`);
       }
     }
     if (updates.hasOwnProperty('description')) {
       fields.push('description = ?');
       values.push(updates.description);
+      if (updates.description !== current.description) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'description', current.description, updates.description, 'đã cập nhật mô tả công việc');
+      }
     }
     if (updates.hasOwnProperty('status')) {
       fields.push('status = ?');
@@ -611,6 +632,7 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       if (updates.status !== current.status) {
         const colNames = { todo: 'Cần làm', in_progress: 'Đang làm', review: 'Đang review', done: 'Hoàn thành' };
         await writeLog(req.user.name, `đã chuyển "${current.title}" sang [${colNames[updates.status] || updates.status}]`, 'move');
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'status', colNames[current.status] || current.status, colNames[updates.status] || updates.status, `đã chuyển trạng thái sang [${colNames[updates.status] || updates.status}]`);
 
         // Tự động ghi nhận actual_start_date nếu chuyển sang in_progress và chưa được set
         if (updates.status === 'in_progress' && !current.actual_start_date) {
@@ -625,6 +647,7 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       if (updates.priority !== current.priority) {
         const prioNames = { high: 'Khẩn cấp', medium: 'Vừa', low: 'Thấp' };
         await writeLog(req.user.name, `đã đổi ưu tiên của "${current.title}" thành [${prioNames[updates.priority] || updates.priority}]`, 'priority');
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'priority', prioNames[current.priority] || current.priority, prioNames[updates.priority] || updates.priority, `đã đổi mức độ ưu tiên thành [${prioNames[updates.priority] || updates.priority}]`);
       }
     }
     if (updates.hasOwnProperty('dueDate')) {
@@ -636,6 +659,7 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       const curDateStr = current.due_date ? new Date(current.due_date).toLocaleString('vi-VN') : 'vô thời hạn';
       if (dateStr !== curDateStr) {
         await writeLog(req.user.name, `đã đổi hạn chót của "${current.title}" thành [${dateStr}]`, 'update');
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'due_date', curDateStr, dateStr, `đã đổi hạn chót thành [${dateStr}]`);
         
         // Reset notification flags when deadline is moved to the future
         if (val && val > new Date()) {
@@ -649,6 +673,12 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       fields.push('start_date = ?');
       const val = updates.startDate ? new Date(updates.startDate) : null;
       values.push(val);
+      
+      const startStr = val ? val.toLocaleString('vi-VN') : 'chưa thiết lập';
+      const curStartStr = current.start_date ? new Date(current.start_date).toLocaleString('vi-VN') : 'chưa thiết lập';
+      if (startStr !== curStartStr) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'start_date', curStartStr, startStr, `đã đổi ngày bắt đầu thành [${startStr}]`);
+      }
     }
 
     if (updates.hasOwnProperty('reminderBeforeMinutes')) {
@@ -659,6 +689,18 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
         if (dueDateVal && dueDateVal > new Date()) {
           fields.push('reminder_sent = 0');
         }
+        const getReminderText = (min) => {
+          if (min === null || min === undefined || min === -1) return 'Không nhắc nhở';
+          if (min === 15) return 'Trước 15 phút';
+          if (min === 30) return 'Trước 30 phút';
+          if (min === 60) return 'Trước 1 giờ';
+          if (min === 120) return 'Trước 2 giờ';
+          if (min === 1440) return 'Trước 1 ngày';
+          return `Trước ${min} phút`;
+        };
+        const curRemText = getReminderText(current.reminder_before_minutes);
+        const newRemText = getReminderText(updates.reminderBeforeMinutes);
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'reminder', curRemText, newRemText, `đã cập nhật nhắc nhở từ [${curRemText}] sang [${newRemText}]`);
       }
     }
 
@@ -695,6 +737,30 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
         }
       }
 
+      // 1. Fetch current links
+      const [curLinksRows] = await pool.query('SELECT type, conversation_id, teams_name, channel_name, chat_name FROM task_teams_links WHERE task_id = ?', [taskId]);
+      const curLinks = curLinksRows.map(l => ({
+        type: l.type,
+        conversationId: l.conversation_id,
+        name: l.type === 'channel' 
+          ? `${l.teams_name || 'Nhóm'} > ${l.channel_name || 'Kênh'}` 
+          : (l.chat_name || 'Cuộc trò chuyện')
+      }));
+
+      // Calculate new links
+      const mappedNewLinks = resolvedLinks.map(link => {
+        const lType = link.type || (link.channelId ? 'channel' : 'chat');
+        const convId = link.conversationId || link.channelId || link.chatId || (lType === 'channel' ? link.channelId : link.chatId);
+        const name = lType === 'channel'
+          ? `${link.teamsName || link.teams_name || 'Nhóm'} > ${link.channelName || link.channel_name || 'Kênh'}`
+          : (link.chatName || link.chat_name || 'Cuộc trò chuyện');
+        return { type: lType, conversationId: convId, name };
+      });
+
+      // Find added and removed links
+      const addedLinks = mappedNewLinks.filter(n => !curLinks.some(c => c.conversationId === n.conversationId));
+      const removedLinks = curLinks.filter(c => !mappedNewLinks.some(n => n.conversationId === c.conversationId));
+
       // 1. Delete existing links in task_teams_links
       await pool.query('DELETE FROM task_teams_links WHERE task_id = ?', [taskId]);
 
@@ -725,6 +791,14 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
             ]
           );
         }
+      }
+
+      // Log added/removed Teams links
+      for (const link of addedLinks) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_link', null, null, link.name, `đã liên kết công việc với Microsoft Teams: [${link.name}]`);
+      }
+      for (const link of removedLinks) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'remove_link', null, link.name, null, `đã hủy liên kết công việc với Microsoft Teams: [${link.name}]`);
       }
 
       // 3. Update tasks legacy columns
@@ -820,29 +894,74 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
                           });
 
       if (isDifferent) {
+        // Fetch current and new names to log added/removed
+        const currentAssigneeIds = curAss.map(c => c.user_id);
+        const newAssigneeIds = resolvedNewAssignees.map(a => a.id);
+        
+        // Find added assignees
+        const addedIds = newAssigneeIds.filter(id => !currentAssigneeIds.includes(id));
+        // Find removed assignees
+        const removedIds = currentAssigneeIds.filter(id => !newAssigneeIds.includes(id));
+        // Find permission changes
+        const permChanges = resolvedNewAssignees.filter(n => {
+          const match = curAss.find(c => c.user_id === n.id);
+          return match && match.permission !== n.permission;
+        });
+
+        // Apply changes
         await pool.query('DELETE FROM task_assignees WHERE task_id = ?', [taskId]);
         if (resolvedNewAssignees.length > 0) {
           for (const a of resolvedNewAssignees) {
             await pool.query('INSERT INTO task_assignees (task_id, user_id, permission) VALUES (?, ?, ?)', [taskId, a.id, a.permission]);
           }
-          const [uRows] = await pool.query('SELECT name FROM users WHERE id IN (?)', [newAssIds]);
-          const newNames = uRows.map(u => u.name).join(', ');
-          await writeLog(req.user.name, `đã gán "${current.title}" cho [${newNames}]`, 'assign');
-        } else {
-          await writeLog(req.user.name, `đã huỷ gán mọi người thực hiện cho "${current.title}"`, 'assign');
+        }
+
+        // Write log entries
+        if (addedIds.length > 0) {
+          const [uRows] = await pool.query('SELECT name FROM users WHERE id IN (?)', [addedIds]);
+          const addedNames = uRows.map(u => u.name).join(', ');
+          await writeLog(req.user.name, `đã gán "${current.title}" cho [${addedNames}]`, 'assign');
+          await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_assignee', null, null, addedNames, `đã gán công việc cho [${addedNames}]`);
+        }
+        if (removedIds.length > 0) {
+          const [uRows] = await pool.query('SELECT name FROM users WHERE id IN (?)', [removedIds]);
+          const removedNames = uRows.map(u => u.name).join(', ');
+          await writeLog(req.user.name, `đã huỷ gán "${current.title}" đối với [${removedNames}]`, 'assign');
+          await writeTaskActivity(taskId, req.user.id, req.user.name, 'remove_assignee', null, removedNames, null, `đã hủy gán công việc cho [${removedNames}]`);
+        }
+        if (permChanges.length > 0) {
+          const [uRows] = await pool.query('SELECT id, name FROM users WHERE id IN (?)', [permChanges.map(p => p.id)]);
+          const nameMap = new Map(uRows.map(u => [u.id, u.name]));
+          for (const pc of permChanges) {
+            const userName = nameMap.get(pc.id) || pc.id;
+            const match = curAss.find(c => c.user_id === pc.id);
+            const oldPermText = (match?.permission || 'edit') === 'edit' ? 'Được sửa' : 'Chỉ xem';
+            const newPermText = pc.permission === 'edit' ? 'Được sửa' : 'Chỉ xem';
+            await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'permission', oldPermText, newPermText, `đã đổi quyền thực hiện của [${userName}] thành [${newPermText}]`);
+          }
         }
       }
     }
 
     // 4. Update tags if supplied
     if (updates.hasOwnProperty('tags')) {
+      const [curTagsRows] = await pool.query('SELECT tag FROM task_tags WHERE task_id = ?', [taskId]);
+      const curTags = curTagsRows.map(r => r.tag);
+      const newTags = (updates.tags || []).map(t => t.trim().toLowerCase().replace(/#/g, '')).filter(Boolean);
+
+      const addedTags = newTags.filter(t => !curTags.includes(t));
+      const removedTags = curTags.filter(t => !newTags.includes(t));
+
       await pool.query('DELETE FROM task_tags WHERE task_id = ?', [taskId]);
-      const newTags = updates.tags || [];
       for (const t of newTags) {
-        const cleanTag = t.trim().toLowerCase().replace(/#/g, '');
-        if (cleanTag) {
-          await pool.query('INSERT INTO task_tags (task_id, tag) VALUES (?, ?)', [taskId, cleanTag]);
-        }
+        await pool.query('INSERT INTO task_tags (task_id, tag) VALUES (?, ?)', [taskId, t]);
+      }
+
+      for (const tag of addedTags) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_tag', null, null, tag, `đã thêm thẻ #[${tag}]`);
+      }
+      for (const tag of removedTags) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'remove_tag', null, tag, null, `đã xóa thẻ #[${tag}]`);
       }
     }
 
@@ -872,6 +991,7 @@ router.delete('/:id', authenticateAppToken, authorizeTask('delete'), async (req,
 
     await pool.query('UPDATE tasks SET is_deleted = 1, deleted_at = NOW() WHERE id = ?', [taskId]);
     await writeLog(req.user.name, `đã xóa công việc "${task.title}"`, 'delete');
+    await writeTaskActivity(taskId, req.user.id, req.user.name, 'delete', null, null, null, 'đã xóa công việc này (Xóa mềm)');
 
     res.json({ message: 'Xóa công việc thành công!' });
 
@@ -899,12 +1019,35 @@ router.post('/:id/restore', authenticateAppToken, async (req, res) => {
 
     await pool.query('UPDATE tasks SET is_deleted = 0, deleted_at = NULL WHERE id = ?', [taskId]);
     await writeLog(req.user.name, `đã khôi phục công việc "${task.title}"`, 'restore');
+    await writeTaskActivity(taskId, req.user.id, req.user.name, 'restore', null, null, null, 'đã khôi phục công việc này');
 
     res.json({ message: 'Khôi phục công việc thành công!' });
 
   } catch (err) {
     console.error('[TASKS API ERROR] Restore failed:', err.message);
     res.status(500).json({ error: 'Không thể khôi phục công việc.' });
+  }
+});
+
+// ───────────────────────────────────────────────
+// API: Lấy chi tiết lịch sử hoạt động của một công việc (Task Activity History)
+// ───────────────────────────────────────────────
+router.get('/:id/activities', authenticateAppToken, authorizeTask('view'), async (req, res) => {
+  const taskId = req.params.id;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT ta.*, u.avatar as user_avatar, u.color as user_color 
+       FROM task_activities ta
+       LEFT JOIN users u ON ta.user_id = u.id
+       WHERE ta.task_id = ?
+       ORDER BY ta.created_at DESC`,
+      [taskId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[TASK ACTIVITIES API ERROR] Failed to fetch task activities:', err.message);
+    res.status(500).json({ error: 'Không thể lấy lịch sử hoạt động của công việc.' });
   }
 });
 
@@ -932,6 +1075,8 @@ router.post('/:id/comments', authenticateAppToken, async (req, res) => {
       'INSERT INTO comments (id, task_id, user_id, content) VALUES (?, ?, ?, ?)',
       [commentId, taskId, req.user.id, content.trim()]
     );
+
+    await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_comment', null, null, content.trim(), 'đã bình luận về công việc');
 
     res.status(201).json({ message: 'Đã thêm bình luận mới!', commentId });
 

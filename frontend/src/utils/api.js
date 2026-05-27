@@ -155,6 +155,9 @@ export const api = {
     body: JSON.stringify({ content })
   }),
 
+  getTaskActivities: (taskId) => apiFetch(`/api/tasks/${taskId}/activities`),
+
+
   // AI & Polling Teams Sync
   pollTeamsSync: (taskId = null) => apiFetch('/api/sync/poll-teams', {
     method: 'POST',

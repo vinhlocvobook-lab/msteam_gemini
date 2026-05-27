@@ -238,6 +238,26 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 10.1.1. Create task_activities table for detailed task change history
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS task_activities (
+        id VARCHAR(255) PRIMARY KEY,
+        task_id VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) NULL,
+        user_name VARCHAR(255) NOT NULL,
+        action_type VARCHAR(50) NOT NULL,
+        field_changed VARCHAR(100) NULL,
+        old_value TEXT NULL,
+        new_value TEXT NULL,
+        description VARCHAR(1000) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+        INDEX idx_ta_task_id (task_id),
+        INDEX idx_ta_created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // 10.2. Create notifications table
     await connection.query(`
       CREATE TABLE IF NOT EXISTS notifications (
