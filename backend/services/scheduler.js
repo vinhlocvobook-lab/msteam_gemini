@@ -75,6 +75,10 @@ export async function sendDirectTeamsMessage(senderId, recipientMsId, subject, c
   try {
     const accessToken = await getValidMicrosoftToken(senderId);
 
+    // Resolve sender's actual Microsoft AAD ID (or use 'me' as fallback shortcut)
+    const [senderRows] = await pool.query('SELECT microsoft_id FROM users WHERE id = ?', [senderId]);
+    const senderMsId = senderRows[0]?.microsoft_id || 'me';
+
     // 1. Create or fetch a 1:1 chat conversation between sender and recipient
     const chatPayload = {
       chatType: 'oneOnOne',
@@ -82,7 +86,7 @@ export async function sendDirectTeamsMessage(senderId, recipientMsId, subject, c
         {
           '@odata.type': '#microsoft.graph.aadUserConversationMember',
           roles: ['owner'],
-          'user@odata.bind': `${MICROSOFT_GRAPH_BASE_URL}/users('${senderId}')`
+          'user@odata.bind': `${MICROSOFT_GRAPH_BASE_URL}/users('${senderMsId}')`
         },
         {
           '@odata.type': '#microsoft.graph.aadUserConversationMember',
@@ -348,8 +352,8 @@ export async function sendDailyMorningDigestForUser(userId) {
   try {
     connection = await pool.getConnection();
 
-    // 1. Get user details
-    const [users] = await connection.query('SELECT name, id FROM users WHERE id = ?', [userId]);
+    // 1. Get user details including microsoft_id
+    const [users] = await connection.query('SELECT name, id, microsoft_id FROM users WHERE id = ?', [userId]);
     if (users.length === 0) {
       throw new Error(`User not found: ${userId}`);
     }
@@ -367,41 +371,63 @@ export async function sendDailyMorningDigestForUser(userId) {
     // 3. Generate AI Daily Digest content
     const digestContent = await generateDailyMorningDigest(user.name, tasks);
 
-    // 4. Find all Microsoft Teams links for this user's tasks
-    const [links] = await connection.query(
-      `SELECT DISTINCT ttl.* 
-       FROM task_teams_links ttl
-       JOIN tasks t ON ttl.task_id = t.id
-       LEFT JOIN task_assignees ta ON t.id = ta.task_id
-       WHERE t.status != 'done' AND t.is_deleted = 0 AND (t.creator_id = ? OR ta.user_id = ?)`,
-      [userId, userId]
-    );
-
+    let delivered = false;
     let deliveredCount = 0;
     
-    // 5. Send digest to linked Teams channels/chats
-    if (links.length > 0) {
+    // 4. Send digest directly to the user's private Teams 1:1 chat (Direct Message - DM)
+    if (user.microsoft_id) {
       const subject = `☀️ Bản tin chào buổi sáng Synapse AI`;
-      
-      // De-duplicate conversation IDs to avoid sending multiple identical digests to the same chat
-      const uniqueLinks = [];
-      const seenConversations = new Set();
-      for (const link of links) {
-        if (!seenConversations.has(link.conversation_id)) {
-          seenConversations.add(link.conversation_id);
-          uniqueLinks.push(link);
+
+      // Find an active sender with a Microsoft token (different from the recipient) to deliver the DM
+      const [adminRows] = await connection.query(
+        `SELECT u.id 
+         FROM users u
+         JOIN microsoft_tokens mt ON u.id = mt.user_id
+         WHERE u.id != ? AND mt.expires_at > NOW()
+         ORDER BY CASE WHEN u.role = 'Admin' THEN 0 ELSE 1 END
+         LIMIT 1`,
+        [userId]
+      );
+
+      let senderIdToUse = null;
+      if (adminRows.length > 0) {
+        senderIdToUse = adminRows[0].id;
+      } else {
+        // Fallback: search for any user with a Microsoft token
+        const [anyRows] = await connection.query(
+          `SELECT u.id 
+           FROM users u
+           JOIN microsoft_tokens mt ON u.id = mt.user_id
+           WHERE u.id != ?
+           LIMIT 1`,
+          [userId]
+        );
+        if (anyRows.length > 0) {
+          senderIdToUse = anyRows[0].id;
         }
       }
 
-      for (const link of uniqueLinks) {
-        await sendTeamsNotification(userId, link, subject, digestContent);
-        await delay(500); // Throttling: 500ms delay between Graph API requests
-        deliveredCount++;
+      // If in mock environment, always simulate using a mock sender ID
+      if (userId.startsWith('mock-') || user.microsoft_id.startsWith('mock-')) {
+        senderIdToUse = senderIdToUse || 'usr-system-admin';
       }
-    } else {
-      console.log(`[DAILY DIGEST] User ${user.name} has no linked Teams channels/chats. Creating system log/notification fallback.`);
+
+      if (senderIdToUse) {
+        try {
+          await sendDirectTeamsMessage(senderIdToUse, user.microsoft_id, subject, digestContent);
+          delivered = true;
+          deliveredCount = 1;
+          console.log(`[DAILY DIGEST] Sent DM successfully to user ${user.name} via sender ${senderIdToUse}`);
+        } catch (dmErr) {
+          console.warn(`[DAILY DIGEST WARNING] Failed to send DM to user ${user.name}:`, dmErr.message);
+        }
+      }
+    }
+
+    // 5. Fallback: If not delivered via Teams DM, create an in-app system notification
+    if (!delivered) {
+      console.log(`[DAILY DIGEST] Could not deliver via Teams DM for ${user.name}. Creating system log/notification fallback.`);
       
-      // Fallback: create a system notification for the user inside the app
       const notifId = `notif-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
       const notifTitle = `☀️ Bản tin chào buổi sáng Synapse AI`;
       await connection.query(
