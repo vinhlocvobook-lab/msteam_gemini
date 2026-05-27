@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import { authenticateAppToken, authorizeTask } from '../auth.js';
+import { sendTeamsNotification, sendDirectTeamsMessage } from '../services/scheduler.js';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -27,6 +28,110 @@ async function writeTaskActivity(taskId, userId, userName, actionType, fieldChan
     );
   } catch (err) {
     console.error('[TASK ACTIVITY LOG ERROR] Failed to write task activity:', err.message);
+  }
+}
+
+// Centralized notification dispatcher for MS Teams smart dynamic routing
+async function triggerTeamsNotifications(taskId, activeUser, actionType, payload = {}) {
+  try {
+    // 1. Fetch task details to get title, creator_id, and assignees
+    const [tasks] = await pool.query('SELECT title, creator_id FROM tasks WHERE id = ? AND is_deleted = 0', [taskId]);
+    if (tasks.length === 0) return;
+    const task = tasks[0];
+
+    const senderId = activeUser.id;
+    const senderName = activeUser.name;
+
+    // A. HIGH-PRIORITY / PERSONAL EVENTS -> Direct Messages (DMs)
+    if (['add_assignee', 'permission', 'add_comment'].includes(actionType)) {
+      if (actionType === 'add_assignee') {
+        const { assigneeIds } = payload;
+        if (!assigneeIds || assigneeIds.length === 0) return;
+
+        // Fetch assignees' Microsoft IDs
+        const [users] = await pool.query('SELECT id, name, microsoft_id FROM users WHERE id IN (?)', [assigneeIds]);
+        for (const u of users) {
+          if (u.microsoft_id && u.id !== senderId) {
+            const subject = '💼 Công việc mới được giao';
+            const content = `Bạn đã được gán vào công việc <strong>"${task.title}"</strong> bởi <strong>${senderName}</strong>.`;
+            await sendDirectTeamsMessage(senderId, u.microsoft_id, subject, content);
+          }
+        }
+      } 
+      else if (actionType === 'permission') {
+        const { recipientId, newPermission } = payload;
+        if (!recipientId) return;
+
+        const [users] = await pool.query('SELECT id, microsoft_id FROM users WHERE id = ?', [recipientId]);
+        if (users.length > 0 && users[0].microsoft_id && recipientId !== senderId) {
+          const permText = newPermission === 'edit' ? 'Được sửa' : 'Chỉ xem';
+          const subject = '🔐 Cập nhật quyền hạn công việc';
+          const content = `Quyền hạn của bạn trên công việc <strong>"${task.title}"</strong> đã được thay đổi thành <strong>${permText}</strong> bởi <strong>${senderName}</strong>.`;
+          await sendDirectTeamsMessage(senderId, users[0].microsoft_id, subject, content);
+        }
+      } 
+      else if (actionType === 'add_comment') {
+        const { commentText } = payload;
+        
+        // Find other assignees and the creator (excluding sender)
+        const [assigneeRows] = await pool.query('SELECT user_id FROM task_assignees WHERE task_id = ?', [taskId]);
+        const recipientIds = new Set(assigneeRows.map(a => a.user_id));
+        recipientIds.add(task.creator_id);
+        recipientIds.delete(senderId);
+
+        if (recipientIds.size > 0) {
+          const [users] = await pool.query('SELECT id, microsoft_id FROM users WHERE id IN (?)', [Array.from(recipientIds)]);
+          for (const u of users) {
+            if (u.microsoft_id) {
+              const subject = '💬 Bình luận mới trong công việc';
+              const content = `<strong>${senderName}</strong> đã bình luận trong công việc <strong>"${task.title}"</strong> của bạn:<br/><em>"${commentText}"</em>`;
+              await sendDirectTeamsMessage(senderId, u.microsoft_id, subject, content);
+            }
+          }
+        }
+      }
+    } 
+    // B. COLLABORATIVE / PROGRESS EVENTS -> Group Channel/Chat Posts
+    else if (['status', 'priority', 'due_date', 'add_link'].includes(actionType)) {
+      // Fetch all MS Teams links linked to this task
+      const [links] = await pool.query('SELECT * FROM task_teams_links WHERE task_id = ?', [taskId]);
+      if (links.length === 0) return;
+
+      let subject = '📢 Cập nhật tiến độ công việc';
+      let content = '';
+
+      if (actionType === 'status') {
+        const { oldStatus, newStatus } = payload;
+        const colNames = { todo: 'Cần làm', in_progress: 'Đang làm', review: 'Đang review', done: 'Hoàn thành' };
+        subject = '📢 Cập nhật trạng thái công việc';
+        content = `Trạng thái của công việc <strong>"${task.title}"</strong> đã được chuyển từ [${colNames[oldStatus] || oldStatus}] sang <strong>[${colNames[newStatus] || newStatus}]</strong> bởi <strong>${senderName}</strong>.`;
+      } 
+      else if (actionType === 'priority') {
+        const { oldPriority, newPriority } = payload;
+        const prioNames = { high: 'Khẩn cấp', medium: 'Vừa', low: 'Thấp' };
+        subject = '⚡ Thay đổi độ ưu tiên công việc';
+        content = `Độ ưu tiên của công việc <strong>"${task.title}"</strong> đã được thay đổi từ [${prioNames[oldPriority] || oldPriority}] sang <strong>[${prioNames[newPriority] || newPriority}]</strong> bởi <strong>${senderName}</strong>.`;
+      } 
+      else if (actionType === 'due_date') {
+        const { oldDueDate, newDueDate } = payload;
+        subject = '📅 Điều chỉnh hạn chót công việc';
+        content = `Hạn chót của công việc <strong>"${task.title}"</strong> đã được thay đổi từ [${oldDueDate || 'Vô thời hạn'}] sang <strong>[${newDueDate || 'Vô thời hạn'}]</strong> bởi <strong>${senderName}</strong>.`;
+      } 
+      else if (actionType === 'add_link') {
+        const { linkName } = payload;
+        subject = '🔗 Liên kết Microsoft Teams mới';
+        content = `Công việc <strong>"${task.title}"</strong> đã được gán liên kết Teams mới <strong>[${linkName}]</strong> bởi <strong>${senderName}</strong>.`;
+      }
+
+      // Send to all links with 500ms delay between serially dispatched requests
+      const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+      for (const link of links) {
+        await sendTeamsNotification(senderId, link, subject, content);
+        await delay(500);
+      }
+    }
+  } catch (err) {
+    console.error('[TEAMS NOTIFICATION DISPATCHER ERROR] Dispatch failed:', err.message);
   }
 }
 
@@ -584,6 +689,13 @@ router.post('/', authenticateAppToken, async (req, res) => {
     await writeLog(creatorName, `đã tạo công việc "${title}" và gán cho [${assigneeNames}]`, 'create');
     await writeTaskActivity(taskId, req.user.id, creatorName, 'create', null, null, null, `đã tạo công việc và gán cho [${assigneeNames}]`);
 
+    // Trigger Smart Teams Direct Messages (DMs) to assignees
+    if (assigneeIds.length > 0) {
+      triggerTeamsNotifications(taskId, req.user, 'add_assignee', { assigneeIds }).catch(err => {
+        console.error('[TEAMS NOTIFICATION ERROR] Task creation notification failed:', err.message);
+      });
+    }
+
     res.status(201).json({ message: 'Tạo công việc thành công!', taskId });
 
   } catch (err) {
@@ -634,6 +746,11 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
         await writeLog(req.user.name, `đã chuyển "${current.title}" sang [${colNames[updates.status] || updates.status}]`, 'move');
         await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'status', colNames[current.status] || current.status, colNames[updates.status] || updates.status, `đã chuyển trạng thái sang [${colNames[updates.status] || updates.status}]`);
 
+        // Trigger Smart Teams Channel Notification
+        triggerTeamsNotifications(taskId, req.user, 'status', { oldStatus: current.status, newStatus: updates.status }).catch(err => {
+          console.error('[TEAMS NOTIFICATION ERROR] Status change notification failed:', err.message);
+        });
+
         // Tự động ghi nhận actual_start_date nếu chuyển sang in_progress và chưa được set
         if (updates.status === 'in_progress' && !current.actual_start_date) {
           fields.push('actual_start_date = ?');
@@ -648,6 +765,11 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
         const prioNames = { high: 'Khẩn cấp', medium: 'Vừa', low: 'Thấp' };
         await writeLog(req.user.name, `đã đổi ưu tiên của "${current.title}" thành [${prioNames[updates.priority] || updates.priority}]`, 'priority');
         await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'priority', prioNames[current.priority] || current.priority, prioNames[updates.priority] || updates.priority, `đã đổi mức độ ưu tiên thành [${prioNames[updates.priority] || updates.priority}]`);
+
+        // Trigger Smart Teams Channel Notification
+        triggerTeamsNotifications(taskId, req.user, 'priority', { oldPriority: current.priority, newPriority: updates.priority }).catch(err => {
+          console.error('[TEAMS NOTIFICATION ERROR] Priority change notification failed:', err.message);
+        });
       }
     }
     if (updates.hasOwnProperty('dueDate')) {
@@ -661,6 +783,11 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
         await writeLog(req.user.name, `đã đổi hạn chót của "${current.title}" thành [${dateStr}]`, 'update');
         await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'due_date', curDateStr, dateStr, `đã đổi hạn chót thành [${dateStr}]`);
         
+        // Trigger Smart Teams Channel Notification
+        triggerTeamsNotifications(taskId, req.user, 'due_date', { oldDueDate: curDateStr, newDueDate: dateStr }).catch(err => {
+          console.error('[TEAMS NOTIFICATION ERROR] Due date change notification failed:', err.message);
+        });
+
         // Reset notification flags when deadline is moved to the future
         if (val && val > new Date()) {
           fields.push('reminder_sent = 0');
@@ -796,6 +923,9 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       // Log added/removed Teams links
       for (const link of addedLinks) {
         await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_link', null, null, link.name, `đã liên kết công việc với Microsoft Teams: [${link.name}]`);
+        triggerTeamsNotifications(taskId, req.user, 'add_link', { linkName: link.name }).catch(err => {
+          console.error('[TEAMS NOTIFICATION ERROR] Teams link addition notification failed:', err.message);
+        });
       }
       for (const link of removedLinks) {
         await writeTaskActivity(taskId, req.user.id, req.user.name, 'remove_link', null, link.name, null, `đã hủy liên kết công việc với Microsoft Teams: [${link.name}]`);
@@ -922,6 +1052,11 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
           const addedNames = uRows.map(u => u.name).join(', ');
           await writeLog(req.user.name, `đã gán "${current.title}" cho [${addedNames}]`, 'assign');
           await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_assignee', null, null, addedNames, `đã gán công việc cho [${addedNames}]`);
+
+          // Trigger Smart Teams Direct Messages (DMs) to added assignees
+          triggerTeamsNotifications(taskId, req.user, 'add_assignee', { assigneeIds: addedIds }).catch(err => {
+            console.error('[TEAMS NOTIFICATION ERROR] Assignee addition notification failed:', err.message);
+          });
         }
         if (removedIds.length > 0) {
           const [uRows] = await pool.query('SELECT name FROM users WHERE id IN (?)', [removedIds]);
@@ -938,6 +1073,11 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
             const oldPermText = (match?.permission || 'edit') === 'edit' ? 'Được sửa' : 'Chỉ xem';
             const newPermText = pc.permission === 'edit' ? 'Được sửa' : 'Chỉ xem';
             await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'permission', oldPermText, newPermText, `đã đổi quyền thực hiện của [${userName}] thành [${newPermText}]`);
+
+            // Trigger Smart Teams Direct Message (DM) to affected assignee
+            triggerTeamsNotifications(taskId, req.user, 'permission', { recipientId: pc.id, newPermission: pc.permission }).catch(err => {
+              console.error('[TEAMS NOTIFICATION ERROR] Permission change notification failed:', err.message);
+            });
           }
         }
       }
@@ -1077,6 +1217,11 @@ router.post('/:id/comments', authenticateAppToken, async (req, res) => {
     );
 
     await writeTaskActivity(taskId, req.user.id, req.user.name, 'add_comment', null, null, content.trim(), 'đã bình luận về công việc');
+
+    // Trigger Smart Teams Direct Message (DM) to other assignees and creator
+    triggerTeamsNotifications(taskId, req.user, 'add_comment', { commentText: content.trim() }).catch(err => {
+      console.error('[TEAMS NOTIFICATION ERROR] Comment addition notification failed:', err.message);
+    });
 
     res.status(201).json({ message: 'Đã thêm bình luận mới!', commentId });
 

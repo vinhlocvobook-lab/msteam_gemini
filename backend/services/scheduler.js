@@ -10,7 +10,15 @@ const MICROSOFT_GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper: Send notification message to Microsoft Teams channel or chat
-async function sendTeamsNotification(creatorId, link, subject, content) {
+export async function sendTeamsNotification(creatorId, link, subject, content) {
+  if (!creatorId || !link) return;
+
+  // Graceful fallback for mock environments
+  if (creatorId.startsWith('mock-') || (link.conversation_id && link.conversation_id.startsWith('mock-'))) {
+    console.log(`[TEAMS NOTIFICATION MOCK fallback] Channel/Chat simulated notification for ${link.type} (${link.conversation_id}): [${subject}] - ${content}`);
+    return;
+  }
+
   try {
     const accessToken = await getValidMicrosoftToken(creatorId);
     let url = '';
@@ -51,6 +59,79 @@ async function sendTeamsNotification(creatorId, link, subject, content) {
       return sendTeamsNotification(creatorId, link, subject, content);
     }
     console.error(`[TEAMS NOTIFICATION ERROR] Failed to send to ${link.type}:`, err.message);
+  }
+}
+
+// Helper: Send a Direct Message (DM) via 1:1 Teams chat between active user and recipient
+export async function sendDirectTeamsMessage(senderId, recipientMsId, subject, content) {
+  if (!senderId || !recipientMsId) return;
+
+  // Graceful fallback for mock environments
+  if (senderId.startsWith('mock-') || recipientMsId.startsWith('mock-')) {
+    console.log(`[TEAMS DM MOCK fallback] DM simulated from user ${senderId} to user MS-ID ${recipientMsId}: [${subject}] - ${content}`);
+    return;
+  }
+
+  try {
+    const accessToken = await getValidMicrosoftToken(senderId);
+
+    // 1. Create or fetch a 1:1 chat conversation between sender and recipient
+    const chatPayload = {
+      chatType: 'oneOnOne',
+      members: [
+        {
+          '@odata.type': '#microsoft.graph.aadUserConversationMember',
+          roles: ['owner'],
+          'user@odata.bind': `${MICROSOFT_GRAPH_BASE_URL}/users('${senderId}')`
+        },
+        {
+          '@odata.type': '#microsoft.graph.aadUserConversationMember',
+          roles: ['owner'],
+          'user@odata.bind': `${MICROSOFT_GRAPH_BASE_URL}/users('${recipientMsId}')`
+        }
+      ]
+    };
+
+    const chatRes = await axios.post(`${MICROSOFT_GRAPH_BASE_URL}/chats`, chatPayload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const chatId = chatRes.data.id;
+
+    // 2. Post the notification message to the retrieved chatId
+    const url = `${MICROSOFT_GRAPH_BASE_URL}/chats/${chatId}/messages`;
+    const payload = {
+      body: {
+        contentType: 'html',
+        content: `
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 16px; border-left: 4px solid #10b981; background-color: #f0fdf4; border-radius: 4px;">
+            <h3 style="color: #047857; margin-top: 0; font-size: 16px; display: flex; align-items: center;">💬 ${subject}</h3>
+            <p style="font-size: 14px; color: #1f2937; line-height: 1.5;">${content}</p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 12px 0;" />
+            <p style="font-size: 11px; color: #9ca3af; margin-bottom: 0; font-style: italic;">Được gửi tự động từ hệ thống quản lý công việc Synapse.</p>
+          </div>
+        `
+      }
+    };
+
+    await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    console.log(`[TEAMS DM] DM sent successfully to user MS-ID ${recipientMsId}`);
+  } catch (err) {
+    if (err.response?.status === 429) {
+      const retryAfter = parseInt(err.response.headers['retry-after']) || 2;
+      console.warn(`[TEAMS DM WARNING] Rate limited (429). Waiting ${retryAfter}s before retry.`);
+      await delay(retryAfter * 1000);
+      return sendDirectTeamsMessage(senderId, recipientMsId, subject, content);
+    }
+    console.error(`[TEAMS DM ERROR] Failed to send DM to user ${recipientMsId}:`, err.message);
   }
 }
 
