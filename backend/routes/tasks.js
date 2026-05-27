@@ -73,7 +73,7 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
       else if (actionType === 'add_comment') {
         const { commentText } = payload;
         
-        // Find other assignees and the creator (excluding sender)
+        // 1. Send DMs to other assignees and the creator (excluding sender) for personal alerts
         const [assigneeRows] = await pool.query('SELECT user_id FROM task_assignees WHERE task_id = ?', [taskId]);
         const recipientIds = new Set(assigneeRows.map(a => a.user_id));
         recipientIds.add(task.creator_id);
@@ -87,6 +87,18 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
               const content = `<strong>${senderName}</strong> đã bình luận trong công việc <strong>"${task.title}"</strong> của bạn:<br/><em>"${commentText}"</em>`;
               await sendDirectTeamsMessage(senderId, u.microsoft_id, subject, content);
             }
+          }
+        }
+
+        // 2. ALSO: Post comment directly to all linked Teams Channels/Chats for team-level visibility
+        const [links] = await pool.query('SELECT * FROM task_teams_links WHERE task_id = ?', [taskId]);
+        if (links.length > 0) {
+          const channelSubject = '💬 Thảo luận mới trong công việc';
+          const channelContent = `<strong>${senderName}</strong> đã gửi một thảo luận mới trong công việc <strong>"${task.title}"</strong>:<br/><blockquote>"${commentText}"</blockquote>`;
+          const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+          for (const link of links) {
+            await sendTeamsNotification(senderId, link, channelSubject, channelContent);
+            await delay(500); // 500ms delay to avoid Teams API rate limiting
           }
         }
       }
