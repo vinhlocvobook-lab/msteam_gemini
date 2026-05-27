@@ -69,6 +69,7 @@ async function checkUpcomingDeadlines() {
               COALESCE(t.reminder_before_minutes, 30) AS remind_before
        FROM tasks t
        WHERE t.status != 'done'
+         AND t.is_deleted = 0
          AND t.due_date IS NOT NULL
          AND t.due_date > NOW()
          AND t.reminder_sent = 0
@@ -162,6 +163,7 @@ async function checkOverdueTasks() {
       `SELECT t.* 
        FROM tasks t
        WHERE t.status != 'done'
+         AND t.is_deleted = 0
          AND t.due_date IS NOT NULL
          AND t.due_date <= NOW()
          AND t.overdue_logged = 0`
@@ -277,7 +279,7 @@ export async function sendDailyMorningDigestForUser(userId) {
       `SELECT DISTINCT t.* 
        FROM tasks t
        LEFT JOIN task_assignees ta ON t.id = ta.task_id
-       WHERE t.status != 'done' AND (t.creator_id = ? OR ta.user_id = ?)`,
+       WHERE t.status != 'done' AND t.is_deleted = 0 AND (t.creator_id = ? OR ta.user_id = ?)`,
       [userId, userId]
     );
 
@@ -290,7 +292,7 @@ export async function sendDailyMorningDigestForUser(userId) {
        FROM task_teams_links ttl
        JOIN tasks t ON ttl.task_id = t.id
        LEFT JOIN task_assignees ta ON t.id = ta.task_id
-       WHERE t.status != 'done' AND (t.creator_id = ? OR ta.user_id = ?)`,
+       WHERE t.status != 'done' AND t.is_deleted = 0 AND (t.creator_id = ? OR ta.user_id = ?)`,
       [userId, userId]
     );
 

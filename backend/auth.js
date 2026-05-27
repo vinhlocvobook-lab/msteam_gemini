@@ -103,6 +103,127 @@ export async function authenticateAppToken(req, res, next) {
 }
 
 // ==========================================
+// AUTHORIZATION MIDDLEWARES (RBAC, ABAC & DAC)
+// ==========================================
+
+/**
+ * Middleware kiểm tra vai trò người dùng (RBAC)
+ * @param {Array<string>} allowedRoles Danh sách các role được phép truy cập
+ */
+export function authorize(allowedRoles = []) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Chưa được xác thực.' });
+    }
+
+    const { role } = req.user;
+    if (!allowedRoles.includes(role)) {
+      return res.status(403).json({ 
+        error: `Bạn không có quyền thực hiện hành động này.` 
+      });
+    }
+    
+    next();
+  };
+}
+
+/**
+ * Middleware kiểm tra quyền hạn chi tiết trên task (RBAC, ABAC & DAC)
+ * @param {string} requiredAction Hành động cần kiểm tra: 'view' | 'edit' | 'delete'
+ */
+export function authorizeTask(requiredAction) {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Chưa được xác thực.' });
+    }
+
+    const taskId = req.params.id || req.body.taskId || req.query.taskId;
+    const { id: userId, role, department_id: userDeptId } = req.user;
+
+    if (!taskId) {
+      return res.status(400).json({ error: 'Không tìm thấy thông tin ID công việc để phân quyền.' });
+    }
+
+    try {
+      // 1. Lấy thông tin cơ bản của task
+      const [taskRows] = await pool.query(
+        'SELECT creator_id, department_id FROM tasks WHERE id = ? AND is_deleted = 0',
+        [taskId]
+      );
+
+      if (taskRows.length === 0) {
+        return res.status(404).json({ error: 'Công việc không tồn tại hoặc đã bị xóa.' });
+      }
+
+      const task = taskRows[0];
+
+      // 2. Xác định xem người dùng hiện tại có quyền SỞ HỮU (Full Control) hay không
+      let hasFullControl = false;
+
+      if (role === 'Admin') {
+        hasFullControl = true;
+      } else if (role === 'Team_Leader') {
+        // Có quyền sở hữu nếu task thuộc phòng ban của Leader, HOẶC do Leader tự tạo
+        if (task.department_id === userDeptId || task.creator_id === userId) {
+          hasFullControl = true;
+        }
+      } else if (role === 'Normal_User') {
+        // Chỉ có quyền sở hữu nếu task do chính User này tạo
+        if (task.creator_id === userId) {
+          hasFullControl = true;
+        }
+      }
+
+      // Xử lý hành động XÓA (Soft Delete) - Chỉ duy nhất người có Full Control mới được thực hiện
+      if (requiredAction === 'delete') {
+        if (hasFullControl) {
+          return next();
+        }
+        return res.status(403).json({ error: 'Bạn không có quyền xóa công việc này. Quyền xóa chỉ thuộc về chủ sở hữu hoặc quản trị viên.' });
+      }
+
+      // Nếu có Full Control, chắc chắn có quyền Edit và View
+      if (hasFullControl) {
+        return next();
+      }
+
+      // 3. Nếu không có Full Control, kiểm tra xem có được gán (Assignee) vào task hay không
+      const [assigneeRows] = await pool.query(
+        'SELECT permission FROM task_assignees WHERE task_id = ? AND user_id = ?',
+        [taskId, userId]
+      );
+
+      const isAssigned = assigneeRows.length > 0;
+      const assigneePermission = isAssigned ? assigneeRows[0].permission : null; // 'edit' hoặc 'view'
+
+      // Xử lý hành động CHỈNH SỬA (Edit)
+      if (requiredAction === 'edit') {
+        if (isAssigned && assigneePermission === 'edit') {
+          return next();
+        }
+        return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa công việc này. Yêu cầu quyền sửa đổi từ chủ sở hữu.' });
+      }
+
+      // Xử lý hành động XEM (View)
+      if (requiredAction === 'view') {
+        // Xem được nếu: được gán (dù quyền là edit hay view) HOẶC cùng phòng ban (để theo dõi chéo trong team)
+        const isSameDept = task.department_id === userDeptId;
+        if (isAssigned || isSameDept) {
+          return next();
+        }
+        return res.status(403).json({ error: 'Bạn không có quyền xem công việc này (không cùng nhóm và không được gán).' });
+      }
+
+      return res.status(403).json({ error: 'Hành động phân quyền không hợp lệ.' });
+
+    } catch (err) {
+      console.error('[AUTH ERROR] Task permission verification failed:', err);
+      res.status(500).json({ error: 'Lỗi hệ thống khi kiểm tra phân quyền công việc.' });
+    }
+  };
+}
+
+// ==========================================
 // MICROSOFT TOKEN AUTO-REFRESH ENGINE
 // ==========================================
 export async function getValidMicrosoftToken(userId) {

@@ -125,7 +125,10 @@ export const api = {
   getUsers: () => apiFetch('/api/users'),
 
   // Tasks CRUD
-  getTasks: () => apiFetch('/api/tasks'),
+  getTasks: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiFetch(`/api/tasks${query ? '?' + query : ''}`);
+  },
 
   getLogs: () => apiFetch('/api/tasks/logs'),
 
@@ -141,6 +144,10 @@ export const api = {
 
   deleteTask: (taskId) => apiFetch(`/api/tasks/${taskId}`, {
     method: 'DELETE'
+  }),
+
+  restoreTask: (taskId) => apiFetch(`/api/tasks/${taskId}/restore`, {
+    method: 'POST'
   }),
 
   addTaskComment: (taskId, content) => apiFetch(`/api/tasks/${taskId}/comments`, {
@@ -201,6 +208,26 @@ export const api = {
   }),
   deleteHoliday: (holidayId) => apiFetch(`/api/calendar/holidays/${holidayId}`, {
     method: 'DELETE'
+  }),
+
+  // Departments CRUD
+  getDepartments: () => apiFetch('/api/departments'),
+  createDepartment: (deptData) => apiFetch('/api/departments', {
+    method: 'POST',
+    body: JSON.stringify(deptData)
+  }),
+  updateDepartment: (deptId, deptData) => apiFetch(`/api/departments/${deptId}`, {
+    method: 'PUT',
+    body: JSON.stringify(deptData)
+  }),
+  deleteDepartment: (deptId) => apiFetch(`/api/departments/${deptId}`, {
+    method: 'DELETE'
+  }),
+
+  // User Administration
+  updateUserRoleDept: (userId, payload) => apiFetch(`/api/users/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
   })
 };
 

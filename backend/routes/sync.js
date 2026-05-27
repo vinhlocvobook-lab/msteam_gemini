@@ -110,7 +110,7 @@ async function processWebhookNotification(subscriptionId, resource, resourceData
     `SELECT DISTINCT t.* 
      FROM tasks t
      LEFT JOIN task_teams_links ttl ON t.id = ttl.task_id
-     WHERE ttl.conversation_id = ? OR t.channel_id = ? OR t.chat_id = ?`,
+     WHERE (ttl.conversation_id = ? OR t.channel_id = ? OR t.chat_id = ?) AND t.is_deleted = 0`,
     [channel_or_chat_id, channel_or_chat_id, channel_or_chat_id]
   );
 
@@ -134,7 +134,7 @@ router.post('/sync/poll-teams', async (req, res) => {
     let links = [];
 
     if (taskId) {
-      const [tRows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+      const [tRows] = await pool.query('SELECT * FROM tasks WHERE id = ? AND is_deleted = 0', [taskId]);
       if (tRows.length === 0) {
         return res.status(404).json({ error: 'Công việc không tồn tại.' });
       }
@@ -146,9 +146,10 @@ router.post('/sync/poll-teams', async (req, res) => {
       const [tRows] = await pool.query(
         `SELECT DISTINCT t.* FROM tasks t
          LEFT JOIN task_teams_links ttl ON t.id = ttl.task_id
-         WHERE (ttl.conversation_id IS NOT NULL AND ttl.conversation_id != '')
+         WHERE ((ttl.conversation_id IS NOT NULL AND ttl.conversation_id != '')
             OR (t.channel_id IS NOT NULL AND t.channel_id != '')
-            OR (t.chat_id IS NOT NULL AND t.chat_id != '')`
+            OR (t.chat_id IS NOT NULL AND t.chat_id != ''))
+            AND t.is_deleted = 0`
       );
       tasks = tRows;
       if (tasks.length > 0) {
@@ -542,7 +543,7 @@ router.post('/simulator/teams-sync', async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    const [rows] = await pool.query('SELECT * FROM tasks WHERE id = ? AND is_deleted = 0', [taskId]);
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Công việc không tồn tại.' });
     }
@@ -555,7 +556,7 @@ router.post('/simulator/teams-sync', async (req, res) => {
     const updateCount = await syncTasksWithMessage([task], mockMessageId, messageText, senderName);
 
     // Fetch the updated task to return to the client
-    const [updatedRows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    const [updatedRows] = await pool.query('SELECT * FROM tasks WHERE id = ? AND is_deleted = 0', [taskId]);
     const updatedTask = updatedRows[0];
 
     // Fetch active task teams links

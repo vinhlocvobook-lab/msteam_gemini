@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../db.js';
-import { authenticateAppToken } from '../auth.js';
+import { authenticateAppToken, authorizeTask } from '../auth.js';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -33,10 +33,18 @@ router.get('/logs', authenticateAppToken, async (req, res) => {
 // ───────────────────────────────────────────────
 router.get('/analytics', authenticateAppToken, async (req, res) => {
   try {
-    // 1. Fetch total tasks count by status
-    const [statusRows] = await pool.query(
-      'SELECT status, COUNT(*) as count FROM tasks GROUP BY status'
-    );
+    const { role, id: userId, department_id: userDeptId } = req.user;
+    
+    // 1. Fetch total tasks count by status (respecting role-based department visibility)
+    let statusSql = 'SELECT status, COUNT(*) as count FROM tasks WHERE is_deleted = 0';
+    const statusParams = [];
+    if (role !== 'Admin') {
+      statusSql += ' AND (department_id = ? OR creator_id = ? OR id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))';
+      statusParams.push(userDeptId, userId, userId);
+    }
+    statusSql += ' GROUP BY status';
+    
+    const [statusRows] = await pool.query(statusSql, statusParams);
     const statusCounts = { todo: 0, in_progress: 0, review: 0, done: 0 };
     statusRows.forEach(row => {
       if (statusCounts.hasOwnProperty(row.status)) {
@@ -46,10 +54,16 @@ router.get('/analytics', authenticateAppToken, async (req, res) => {
 
     const totalTasks = Object.values(statusCounts).reduce((a, b) => a + b, 0);
 
-    // 2. Fetch total tasks count by priority
-    const [prioRows] = await pool.query(
-      'SELECT priority, COUNT(*) as count FROM tasks GROUP BY priority'
-    );
+    // 2. Fetch total tasks count by priority (respecting role-based department visibility)
+    let prioSql = 'SELECT priority, COUNT(*) as count FROM tasks WHERE is_deleted = 0';
+    const prioParams = [];
+    if (role !== 'Admin') {
+      prioSql += ' AND (department_id = ? OR creator_id = ? OR id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))';
+      prioParams.push(userDeptId, userId, userId);
+    }
+    prioSql += ' GROUP BY priority';
+
+    const [prioRows] = await pool.query(prioSql, prioParams);
     const prioCounts = { high: 0, medium: 0, low: 0 };
     prioRows.forEach(row => {
       if (prioCounts.hasOwnProperty(row.priority)) {
@@ -60,21 +74,28 @@ router.get('/analytics', authenticateAppToken, async (req, res) => {
     // 3. Calculate On-Time Completion Rate (Tỷ lệ hoàn thành đúng hạn)
     const doneCount = statusCounts.done || 0;
     
-    // Done tasks with overdue_logged = 0 were completed on-time.
-    const [onTimeRows] = await pool.query(
-      "SELECT COUNT(*) as count FROM tasks WHERE status = 'done' AND overdue_logged = 0"
-    );
+    let onTimeSql = "SELECT COUNT(*) as count FROM tasks WHERE status = 'done' AND overdue_logged = 0 AND is_deleted = 0";
+    const onTimeParams = [];
+    if (role !== 'Admin') {
+      onTimeSql += ' AND (department_id = ? OR creator_id = ? OR id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))';
+      onTimeParams.push(userDeptId, userId, userId);
+    }
+    const [onTimeRows] = await pool.query(onTimeSql, onTimeParams);
     const onTimeCount = onTimeRows[0]?.count || 0;
     
     const onTimeRate = doneCount > 0 ? Math.round((onTimeCount / doneCount) * 100) : 100;
 
     // 4. Calculate Lead Time (Thời gian hoàn thành trung bình) in hours
-    const [leadTimeRows] = await pool.query(
-      `SELECT t.id, t.created_at as task_created, l.created_at as log_created
+    let leadTimeSql = `SELECT t.id, t.created_at as task_created, l.created_at as log_created
        FROM tasks t
        JOIN logs l ON l.action LIKE CONCAT('%đã chuyển "%', t.title, '%" sang [Hoàn thành]%')
-       WHERE t.status = 'done'`
-    );
+       WHERE t.status = 'done' AND t.is_deleted = 0`;
+    const leadTimeParams = [];
+    if (role !== 'Admin') {
+      leadTimeSql += ' AND (t.department_id = ? OR t.creator_id = ? OR t.id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))';
+      leadTimeParams.push(userDeptId, userId, userId);
+    }
+    const [leadTimeRows] = await pool.query(leadTimeSql, leadTimeParams);
 
     let totalLeadTimeHrs = 0;
     let validLeadTimeCount = 0;
@@ -93,16 +114,24 @@ router.get('/analytics', authenticateAppToken, async (req, res) => {
     if (validLeadTimeCount > 0) {
       avgLeadTimeHrs = Math.round((totalLeadTimeHrs / validLeadTimeCount) * 10) / 10;
     } else {
-      // Fallback lead time in case of no logged matches yet
       avgLeadTimeHrs = doneCount > 0 ? 12.5 : 0;
     }
 
     // 5. Team Workload Distribution
-    const [userRows] = await pool.query('SELECT id, name, avatar, role, color FROM users');
+    let userSql = 'SELECT id, name, avatar, role, color FROM users';
+    const userParams = [];
+    if (role !== 'Admin') {
+      // Leader/User only sees users in their own department
+      userSql += ' WHERE department_id = ?';
+      userParams.push(userDeptId);
+    }
+    const [userRows] = await pool.query(userSql, userParams);
+    
     const [assigneeRows] = await pool.query(
       `SELECT ta.user_id, t.status, COUNT(*) as count
        FROM task_assignees ta
        JOIN tasks t ON ta.task_id = t.id
+       WHERE t.is_deleted = 0
        GROUP BY ta.user_id, t.status`
     );
 
@@ -125,20 +154,35 @@ router.get('/analytics', authenticateAppToken, async (req, res) => {
     });
 
     // 6. Popular Tags
-    const [tagRows] = await pool.query(
-      'SELECT tag, COUNT(*) as count FROM task_tags GROUP BY tag ORDER BY count DESC LIMIT 8'
-    );
+    let tagsSql = `SELECT tt.tag, COUNT(*) as count 
+       FROM task_tags tt
+       JOIN tasks t ON tt.task_id = t.id
+       WHERE t.is_deleted = 0`;
+    const tagsParams = [];
+    if (role !== 'Admin') {
+      tagsSql += ' AND (t.department_id = ? OR t.creator_id = ? OR t.id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))';
+      tagsParams.push(userDeptId, userId, userId);
+    }
+    tagsSql += ' GROUP BY tt.tag ORDER BY count DESC LIMIT 8';
+    
+    const [tagRows] = await pool.query(tagsSql, tagsParams);
     const tagsAnalytics = tagRows.map(row => ({ tag: row.tag, count: row.count }));
 
     // 7. Recent Overdue Alerts
-    const [overdueRows] = await pool.query(
-      `SELECT ol.*, u.avatar as assignee_avatar
+    let overdueSql = `SELECT ol.*, u.avatar as assignee_avatar
        FROM overdue_logs ol
-       LEFT JOIN tasks t ON ol.task_id = t.id
+       JOIN tasks t ON ol.task_id = t.id
        LEFT JOIN task_assignees ta ON t.id = ta.task_id
        LEFT JOIN users u ON ta.user_id = u.id
-       ORDER BY ol.logged_at DESC LIMIT 5`
-    );
+       WHERE t.is_deleted = 0`;
+    const overdueParams = [];
+    if (role !== 'Admin') {
+      overdueSql += ' AND (t.department_id = ? OR t.creator_id = ? OR t.id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))';
+      overdueParams.push(userDeptId, userId, userId);
+    }
+    overdueSql += ' ORDER BY ol.logged_at DESC LIMIT 5';
+    
+    const [overdueRows] = await pool.query(overdueSql, overdueParams);
 
     res.json({
       totalTasks,
@@ -162,8 +206,67 @@ router.get('/analytics', authenticateAppToken, async (req, res) => {
 // ───────────────────────────────────────────────
 router.get('/', authenticateAppToken, async (req, res) => {
   try {
-    // 1. Fetch all tasks
-    const [tasks] = await pool.query('SELECT * FROM tasks ORDER BY created_at DESC');
+    const { q, priority, status, filterMode, assignee } = req.query;
+
+    let query = 'SELECT DISTINCT t.* FROM tasks t';
+    const joins = [];
+    const where = ['t.is_deleted = 0'];
+    const params = [];
+
+    // --- BẮT ĐẦU: RÀNG BUỘC PHÒNG BAN & PHÂN QUYỀN (ABAC) ---
+    if (req.user.role !== 'Admin') {
+      where.push('(t.department_id = ? OR t.creator_id = ? OR t.id IN (SELECT task_id FROM task_assignees WHERE user_id = ?))');
+      params.push(req.user.department_id, req.user.id, req.user.id);
+    }
+    // --- KẾT THÚC RÀNG BUỘC ---
+
+    // 1. filterMode = 'mine' (Assigned to the current active user)
+    if (filterMode === 'mine') {
+      joins.push('JOIN task_assignees ta_mine ON t.id = ta_mine.task_id');
+      where.push('ta_mine.user_id = ?');
+      params.push(req.user.id);
+    }
+
+    // 1.5. assignee filter (supports multiple assignee user IDs as a comma-separated string)
+    if (assignee) {
+      const assigneeIds = assignee.split(',');
+      joins.push('JOIN task_assignees ta_filter ON t.id = ta_filter.task_id');
+      where.push(`ta_filter.user_id IN (${assigneeIds.map(() => '?').join(', ')})`);
+      params.push(...assigneeIds);
+    }
+
+    // 2. priority filter (supports multiple priorities as a comma-separated string)
+    if (priority) {
+      const priorities = priority.split(',');
+      where.push(`t.priority IN (${priorities.map(() => '?').join(', ')})`);
+      params.push(...priorities);
+    }
+
+    // 3. status filter (supports multiple statuses as a comma-separated string)
+    if (status) {
+      const statuses = status.split(',');
+      where.push(`t.status IN (${statuses.map(() => '?').join(', ')})`);
+      params.push(...statuses);
+    }
+
+    // 4. search term q (searches title, description, tags, or assignees' names)
+    if (q && q.trim()) {
+      const term = `%${q.trim().toLowerCase()}%`;
+      const tagTerm = `%${q.trim().toLowerCase().replace('#', '')}%`;
+
+      joins.push('LEFT JOIN task_assignees ta_search ON t.id = ta_search.task_id');
+      joins.push('LEFT JOIN users u_search ON ta_search.user_id = u_search.id');
+      joins.push('LEFT JOIN task_tags tt_search ON t.id = tt_search.task_id');
+
+      where.push('(t.title LIKE ? OR t.description LIKE ? OR tt_search.tag LIKE ? OR u_search.name LIKE ?)');
+      params.push(term, term, tagTerm, term);
+    }
+
+    const joinStr = joins.join(' ');
+    const whereStr = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+    const sql = `${query} ${joinStr} ${whereStr} ORDER BY t.created_at DESC`;
+
+    const [tasks] = await pool.query(sql, params);
 
     if (tasks.length === 0) {
       return res.json([]);
@@ -175,7 +278,7 @@ router.get('/', authenticateAppToken, async (req, res) => {
 
     // 3. Fetch task assignees
     const [assignees] = await pool.query(`
-      SELECT ta.task_id, u.id, u.name, u.username, u.email, u.role, u.avatar, u.color 
+      SELECT ta.task_id, ta.permission, u.id, u.name, u.username, u.email, u.role, u.avatar, u.color 
       FROM task_assignees ta
       JOIN users u ON ta.user_id = u.id
     `);
@@ -191,7 +294,8 @@ router.get('/', authenticateAppToken, async (req, res) => {
         email: a.email,
         role: a.role,
         avatar: a.avatar,
-        color: a.color
+        color: a.color,
+        permission: a.permission || 'edit'
       });
     });
 
@@ -293,7 +397,9 @@ router.get('/', authenticateAppToken, async (req, res) => {
         channelId: taskTeamsLinks[0]?.channelId || t.channel_id || '',
         chatId: taskTeamsLinks[0]?.chatId || t.chat_id || '',
         teamsMessageId: t.teams_message_id,
-        lastSyncedAt: t.last_synced_at
+        lastSyncedAt: t.last_synced_at,
+        updatedAt: t.updated_at,
+        department_id: t.department_id
       };
     });
 
@@ -384,10 +490,10 @@ router.post('/', authenticateAppToken, async (req, res) => {
     // 1. Insert base task with primary link fields for backward compatibility
     await pool.query(
       `INSERT INTO tasks (id, title, description, status, priority, start_date, actual_start_date, due_date, reminder_before_minutes, creator_id, 
-                          teams_link, channel_link, chat_link, teams_id, channel_id, chat_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          teams_link, channel_link, chat_link, teams_id, channel_id, chat_id, department_id) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [taskId, title, description, status, priority, parsedStartDate, actualStartDate, parsedDueDate, reminderBeforeMinutes !== undefined ? reminderBeforeMinutes : null, resolvedCreator,
-       legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId]
+       legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId, req.user.department_id]
     );
 
     // 1.5. Insert teams links into task_teams_links
@@ -420,9 +526,22 @@ router.post('/', authenticateAppToken, async (req, res) => {
     }
 
     // 2. Insert assignees
-    if (assigneeIds.length > 0) {
-      for (const uid of assigneeIds) {
-        await pool.query('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)', [taskId, uid]);
+    let resolvedAssignees = [];
+    if (req.body.assignees && req.body.assignees.length > 0) {
+      resolvedAssignees = req.body.assignees.map(a => ({
+        id: a.id,
+        permission: a.permission || 'edit'
+      }));
+    } else if (assigneeIds && assigneeIds.length > 0) {
+      resolvedAssignees = assigneeIds.map(uid => ({
+        id: uid,
+        permission: 'edit'
+      }));
+    }
+
+    if (resolvedAssignees.length > 0) {
+      for (const a of resolvedAssignees) {
+        await pool.query('INSERT INTO task_assignees (task_id, user_id, permission) VALUES (?, ?, ?)', [taskId, a.id, a.permission]);
       }
     }
 
@@ -459,13 +578,13 @@ router.post('/', authenticateAppToken, async (req, res) => {
 // ───────────────────────────────────────────────
 // API: Cập nhật công việc
 // ───────────────────────────────────────────────
-router.put('/:id', authenticateAppToken, async (req, res) => {
+router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res) => {
   const taskId = req.params.id;
   const updates = req.body;
 
   try {
     // 1. Fetch current task to compare changes for logging
-    const [currentRows] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    const [currentRows] = await pool.query('SELECT * FROM tasks WHERE id = ? AND is_deleted = 0', [taskId]);
     if (currentRows.length === 0) {
       return res.status(404).json({ error: 'Công việc không tồn tại.' });
     }
@@ -674,22 +793,37 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
     }
 
     // 3. Update assignees if supplied
-    if (updates.hasOwnProperty('assigneeIds')) {
-      // Fetch current assignees
-      const [curAss] = await pool.query('SELECT user_id FROM task_assignees WHERE task_id = ?', [taskId]);
-      const curAssIds = curAss.map(a => a.user_id);
-      
-      const newAssIds = updates.assigneeIds || [];
+    if (updates.hasOwnProperty('assignees') || updates.hasOwnProperty('assigneeIds')) {
+      let resolvedNewAssignees = [];
+      if (updates.hasOwnProperty('assignees')) {
+        resolvedNewAssignees = (updates.assignees || []).map(a => ({
+          id: a.id,
+          permission: a.permission || 'edit'
+        }));
+      } else {
+        resolvedNewAssignees = (updates.assigneeIds || []).map(uid => ({
+          id: uid,
+          permission: 'edit'
+        }));
+      }
 
-      // Check if assignees lists actually differ
-      const isDifferent = curAssIds.length !== newAssIds.length || 
-                          curAssIds.some(id => !newAssIds.includes(id));
+      const newAssIds = resolvedNewAssignees.map(a => a.id);
+
+      // Fetch current assignees
+      const [curAss] = await pool.query('SELECT user_id, permission FROM task_assignees WHERE task_id = ?', [taskId]);
+      
+      // Check if assignees or their permissions actually differ
+      const isDifferent = curAss.length !== resolvedNewAssignees.length || 
+                          curAss.some(c => {
+                            const match = resolvedNewAssignees.find(n => n.id === c.user_id);
+                            return !match || match.permission !== c.permission;
+                          });
 
       if (isDifferent) {
         await pool.query('DELETE FROM task_assignees WHERE task_id = ?', [taskId]);
-        if (newAssIds.length > 0) {
-          for (const uid of newAssIds) {
-            await pool.query('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)', [taskId, uid]);
+        if (resolvedNewAssignees.length > 0) {
+          for (const a of resolvedNewAssignees) {
+            await pool.query('INSERT INTO task_assignees (task_id, user_id, permission) VALUES (?, ?, ?)', [taskId, a.id, a.permission]);
           }
           const [uRows] = await pool.query('SELECT name FROM users WHERE id IN (?)', [newAssIds]);
           const newNames = uRows.map(u => u.name).join(', ');
@@ -721,26 +855,56 @@ router.put('/:id', authenticateAppToken, async (req, res) => {
 });
 
 // ───────────────────────────────────────────────
-// API: Xóa công việc (ON DELETE CASCADE)
+// API: Xóa công việc (Xóa mềm - Soft Delete)
 // ───────────────────────────────────────────────
-router.delete('/:id', authenticateAppToken, async (req, res) => {
+router.delete('/:id', authenticateAppToken, authorizeTask('delete'), async (req, res) => {
   const taskId = req.params.id;
 
   try {
-    const [rows] = await pool.query('SELECT title FROM tasks WHERE id = ?', [taskId]);
+    const [rows] = await pool.query('SELECT title, is_deleted FROM tasks WHERE id = ?', [taskId]);
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Công việc không tồn tại.' });
     }
-    const title = rows[0].title;
+    const task = rows[0];
+    if (task.is_deleted) {
+      return res.status(400).json({ error: 'Công việc này đã bị xóa rồi.' });
+    }
 
-    await pool.query('DELETE FROM tasks WHERE id = ?', [taskId]);
-    await writeLog(req.user.name, `đã xóa công việc "${title}"`, 'delete');
+    await pool.query('UPDATE tasks SET is_deleted = 1, deleted_at = NOW() WHERE id = ?', [taskId]);
+    await writeLog(req.user.name, `đã xóa công việc "${task.title}"`, 'delete');
 
     res.json({ message: 'Xóa công việc thành công!' });
 
   } catch (err) {
     console.error('[TASKS API ERROR] Delete failed:', err.message);
     res.status(500).json({ error: 'Không thể xóa công việc.' });
+  }
+});
+
+// ───────────────────────────────────────────────
+// API: Khôi phục công việc đã xóa (Undo Soft Delete)
+// ───────────────────────────────────────────────
+router.post('/:id/restore', authenticateAppToken, async (req, res) => {
+  const taskId = req.params.id;
+
+  try {
+    const [rows] = await pool.query('SELECT title, is_deleted FROM tasks WHERE id = ?', [taskId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Công việc không tồn tại.' });
+    }
+    const task = rows[0];
+    if (!task.is_deleted) {
+      return res.status(400).json({ error: 'Công việc này đang hoạt động, không cần khôi phục.' });
+    }
+
+    await pool.query('UPDATE tasks SET is_deleted = 0, deleted_at = NULL WHERE id = ?', [taskId]);
+    await writeLog(req.user.name, `đã khôi phục công việc "${task.title}"`, 'restore');
+
+    res.json({ message: 'Khôi phục công việc thành công!' });
+
+  } catch (err) {
+    console.error('[TASKS API ERROR] Restore failed:', err.message);
+    res.status(500).json({ error: 'Không thể khôi phục công việc.' });
   }
 });
 
@@ -758,10 +922,10 @@ router.post('/:id/comments', authenticateAppToken, async (req, res) => {
   const commentId = `comment-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
   try {
-    // Check if task exists
-    const [tRows] = await pool.query('SELECT title FROM tasks WHERE id = ?', [taskId]);
+    // Check if task exists and is not soft-deleted
+    const [tRows] = await pool.query('SELECT title FROM tasks WHERE id = ? AND is_deleted = 0', [taskId]);
     if (tRows.length === 0) {
-      return res.status(404).json({ error: 'Công việc không tồn tại.' });
+      return res.status(404).json({ error: 'Công việc không tồn tại hoặc đã bị xóa.' });
     }
 
     await pool.query(

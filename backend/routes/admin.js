@@ -1,13 +1,13 @@
 import express from 'express';
 import pool from '../db.js';
-import { authenticateAppToken } from '../auth.js';
+import { authenticateAppToken, authorize } from '../auth.js';
 
 const router = express.Router();
 
 // ───────────────────────────────────────────────
 // API: Thu hồi tất cả phiên hoạt động của người dùng (Admin)
 // ───────────────────────────────────────────────
-router.post('/revoke-user', authenticateAppToken, async (req, res) => {
+router.post('/revoke-user', authenticateAppToken, authorize(['Admin']), async (req, res) => {
   const { userId } = req.body;
 
   if (!userId) {

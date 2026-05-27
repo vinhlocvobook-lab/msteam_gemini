@@ -102,17 +102,18 @@ router.post('/login', async (req, res) => {
         name,
         username,
         email,
-        role: 'Collaborator',
+        role: 'Normal_User',
         avatar: avatarUrl,
         color: randomColor,
         microsoft_id: msUserId,
         ms_tenant_id: msTenantId || MICROSOFT_TENANT_ID || 'common',
-        token_version: 1
+        token_version: 1,
+        department_id: null
       };
 
       await pool.query(
-        'INSERT INTO users (id, name, username, email, role, avatar, color, microsoft_id, ms_tenant_id, token_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [user.id, user.name, user.username, user.email, user.role, user.avatar, user.color, user.microsoft_id, user.ms_tenant_id, user.token_version]
+        'INSERT INTO users (id, name, username, email, role, avatar, color, microsoft_id, ms_tenant_id, token_version, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [user.id, user.name, user.username, user.email, user.role, user.avatar, user.color, user.microsoft_id, user.ms_tenant_id, user.token_version, user.department_id]
       );
       console.log(`[AUTH] Created new local user account: ${user.id}`);
     } else {
@@ -147,6 +148,7 @@ router.post('/login', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        department_id: user.department_id,
         avatar: user.avatar,
         color: user.color,
         tokenVersion: user.token_version
@@ -184,6 +186,7 @@ router.post('/login', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        department_id: user.department_id,
         avatar: user.avatar,
         color: user.color
       }
@@ -238,6 +241,7 @@ router.post('/refresh', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        department_id: user.department_id,
         avatar: user.avatar,
         color: user.color,
         tokenVersion: user.token_version
@@ -328,6 +332,7 @@ router.post('/mock-login', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        department_id: user.department_id,
         avatar: user.avatar,
         color: user.color,
         tokenVersion: user.token_version
@@ -364,6 +369,7 @@ router.post('/mock-login', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        department_id: user.department_id,
         avatar: user.avatar,
         color: user.color
       }

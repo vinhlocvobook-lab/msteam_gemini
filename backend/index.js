@@ -13,6 +13,7 @@ import syncRoutes from './routes/sync.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
 import calendarRoutes from './routes/calendar.js';
+import departmentRoutes from './routes/departments.js';
 
 dotenv.config();
 
@@ -60,6 +61,7 @@ app.use('/api', syncRoutes); // Matches /api/webhooks/teams, /api/sync/poll-team
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/departments', departmentRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

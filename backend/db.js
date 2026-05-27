@@ -30,6 +30,28 @@ export async function initializeDatabase() {
     connection = await pool.getConnection();
     console.log('[DATABASE] Connected to MySQL successfully!');
 
+    // 0. Create departments table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS departments (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Seed departments if empty
+    const [deptCount] = await connection.query('SELECT COUNT(*) as count FROM departments');
+    if (deptCount[0].count === 0) {
+      console.log('[DATABASE] Seeding default departments...');
+      await connection.query(`
+        INSERT INTO departments (id, name, description) VALUES 
+        ('dept-tech', 'Phòng Kỹ thuật & Công nghệ', 'Chịu trách nhiệm phát triển phần mềm và hạ tầng hệ thống'),
+        ('dept-design', 'Phòng Thiết kế & UI/UX', 'Thiết kế trải nghiệm người dùng và thương hiệu'),
+        ('dept-product', 'Ban Quản trị Sản phẩm', 'Quản lý roadmap và định hướng phát triển sản phẩm')
+      `);
+    }
+
     // 1. Create users table
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -43,7 +65,9 @@ export async function initializeDatabase() {
         microsoft_id VARCHAR(255) UNIQUE,
         ms_tenant_id VARCHAR(255),
         token_version INT DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        department_id VARCHAR(255) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
@@ -117,9 +141,11 @@ export async function initializeDatabase() {
         chat_id VARCHAR(255),
         teams_message_id VARCHAR(255),
         last_synced_at DATETIME,
+        department_id VARCHAR(255) DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
@@ -151,6 +177,7 @@ export async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS task_assignees (
         task_id VARCHAR(255) NOT NULL,
         user_id VARCHAR(255) NOT NULL,
+        permission VARCHAR(50) DEFAULT 'edit',
         PRIMARY KEY (task_id, user_id),
         FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -302,6 +329,81 @@ export async function initializeDatabase() {
       await connection.query("ALTER TABLE tasks ADD COLUMN actual_start_date DATETIME DEFAULT NULL");
       console.log("[DATABASE MIGRATION] Added column actual_start_date to tasks");
     }
+    if (!colNames.includes('is_deleted')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN is_deleted TINYINT DEFAULT 0");
+      console.log("[DATABASE MIGRATION] Added column is_deleted to tasks");
+    }
+    if (!colNames.includes('deleted_at')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN deleted_at DATETIME DEFAULT NULL");
+      console.log("[DATABASE MIGRATION] Added column deleted_at to tasks");
+    }
+    if (!colNames.includes('department_id')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN department_id VARCHAR(255) DEFAULT NULL");
+      await connection.query("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL");
+      console.log("[DATABASE MIGRATION] Added column department_id to tasks");
+    }
+
+    // 10.3.1 Migration: Add department_id to users if not exists
+    const [userColumns] = await connection.query("SHOW COLUMNS FROM users");
+    const userColNames = userColumns.map(c => c.Field);
+    if (!userColNames.includes('department_id')) {
+      await connection.query("ALTER TABLE users ADD COLUMN department_id VARCHAR(255) DEFAULT NULL");
+      await connection.query("ALTER TABLE users ADD CONSTRAINT fk_users_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL");
+      console.log("[DATABASE MIGRATION] Added column department_id to users");
+    }
+
+    // 10.3.2 Migration: Add permission to task_assignees if not exists
+    const [taColumns] = await connection.query("SHOW COLUMNS FROM task_assignees");
+    const taColNames = taColumns.map(c => c.Field);
+    if (!taColNames.includes('permission')) {
+      await connection.query("ALTER TABLE task_assignees ADD COLUMN permission VARCHAR(50) DEFAULT 'edit'");
+      console.log("[DATABASE MIGRATION] Added column permission to task_assignees");
+    }
+
+    // 10.3.3 Migration: Ensure index constraints for role, departments and permissions
+    try {
+      const [indexes] = await connection.query("SHOW INDEX FROM users");
+      const idxNames = indexes.map(i => i.Key_name);
+      if (!idxNames.includes('idx_users_role')) {
+        await connection.query("CREATE INDEX idx_users_role ON users (role)");
+      }
+      if (!idxNames.includes('idx_users_dept')) {
+        await connection.query("CREATE INDEX idx_users_dept ON users (department_id)");
+      }
+    } catch (e) {
+      console.warn("[DATABASE MIGRATION] Users index creation bypassed:", e.message);
+    }
+
+    try {
+      const [tIndexes] = await connection.query("SHOW INDEX FROM tasks");
+      const tIdxNames = tIndexes.map(i => i.Key_name);
+      if (!tIdxNames.includes('idx_tasks_dept')) {
+        await connection.query("CREATE INDEX idx_tasks_dept ON tasks (department_id)");
+      }
+    } catch (e) {
+      console.warn("[DATABASE MIGRATION] Tasks index creation bypassed:", e.message);
+    }
+
+    try {
+      const [taIndexes] = await connection.query("SHOW INDEX FROM task_assignees");
+      const taIdxNames = taIndexes.map(i => i.Key_name);
+      if (!taIdxNames.includes('idx_ta_permission')) {
+        await connection.query("CREATE INDEX idx_ta_permission ON task_assignees (permission)");
+      }
+    } catch (e) {
+      console.warn("[DATABASE MIGRATION] Task assignees index creation bypassed:", e.message);
+    }
+
+    // 10.3.4 Migration: Seed and update role & departments for standard user profiles
+    console.log("[DATABASE MIGRATION] Syncing role standardizations and departments...");
+    await connection.query("UPDATE users SET role = 'Admin', department_id = 'dept-product' WHERE id = 'loc'");
+    await connection.query("UPDATE users SET role = 'Team_Leader', department_id = 'dept-design' WHERE id = 'lan'");
+    await connection.query("UPDATE users SET role = 'Normal_User', department_id = 'dept-tech' WHERE id = 'huy'");
+    await connection.query("UPDATE users SET role = 'Normal_User', department_id = 'dept-tech' WHERE id = 'binh'");
+    
+    // Set tasks department based on creator's department
+    await connection.query("UPDATE tasks t JOIN users u ON t.creator_id = u.id SET t.department_id = u.department_id WHERE t.department_id IS NULL");
+    console.log("[DATABASE MIGRATION] ✅ Sync complete.");
 
     // 10.4. Migration: Add index to tasks if not exists
     const [indexes] = await connection.query("SHOW INDEX FROM tasks");
@@ -309,6 +411,37 @@ export async function initializeDatabase() {
     if (!idxNames.includes('idx_tasks_due_status_rem')) {
       await connection.query("CREATE INDEX idx_tasks_due_status_rem ON tasks (due_date, status, reminder_sent, overdue_logged)");
       console.log("[DATABASE MIGRATION] Created composite index idx_tasks_due_status_rem on tasks");
+    }
+    if (!idxNames.includes('idx_tasks_is_deleted')) {
+      await connection.query("CREATE INDEX idx_tasks_is_deleted ON tasks (is_deleted)");
+      console.log("[DATABASE MIGRATION] Created index idx_tasks_is_deleted on tasks");
+    }
+
+    if (!idxNames.includes('idx_tasks_created_at')) {
+      await connection.query("CREATE INDEX idx_tasks_created_at ON tasks (created_at)");
+      console.log("[DATABASE MIGRATION] Created index idx_tasks_created_at on tasks");
+    }
+    if (!idxNames.includes('idx_tasks_status')) {
+      await connection.query("CREATE INDEX idx_tasks_status ON tasks (status)");
+      console.log("[DATABASE MIGRATION] Created index idx_tasks_status on tasks");
+    }
+    if (!idxNames.includes('idx_tasks_priority')) {
+      await connection.query("CREATE INDEX idx_tasks_priority ON tasks (priority)");
+      console.log("[DATABASE MIGRATION] Created index idx_tasks_priority on tasks");
+    }
+
+    const [taIndexes] = await connection.query("SHOW INDEX FROM task_assignees");
+    const taIdxNames = taIndexes.map(i => i.Key_name);
+    if (!taIdxNames.includes('idx_ta_user_id')) {
+      await connection.query("CREATE INDEX idx_ta_user_id ON task_assignees (user_id)");
+      console.log("[DATABASE MIGRATION] Created index idx_ta_user_id on task_assignees");
+    }
+
+    const [ttIndexes] = await connection.query("SHOW INDEX FROM task_tags");
+    const ttIdxNames = ttIndexes.map(i => i.Key_name);
+    if (!ttIdxNames.includes('idx_tt_tag')) {
+      await connection.query("CREATE INDEX idx_tt_tag ON task_tags (tag)");
+      console.log("[DATABASE MIGRATION] Created index idx_tt_tag on task_tags");
     }
 
     console.log('[DATABASE] All tables are bootstrapped successfully.');

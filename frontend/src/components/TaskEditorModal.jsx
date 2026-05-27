@@ -259,6 +259,30 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm
 }
 
 export default function TaskEditorModal({ task, onClose, onSave, activeUser, teamMembers = USERS }) {
+  const hasFullControl = (() => {
+    if (!activeUser) return false;
+    if (activeUser.role === 'Admin') return true;
+    const creatorId = task.creator?.id || task.creator_id || '';
+    if (activeUser.role === 'Team_Leader') {
+      return creatorId === activeUser.id || task.department_id === activeUser.department_id;
+    }
+    return creatorId === activeUser.id;
+  })();
+
+  const canEdit = (() => {
+    if (!activeUser) return false;
+    if (activeUser.role === 'Admin') return true;
+    const creatorId = task.creator?.id || task.creator_id || '';
+    if (activeUser.role === 'Team_Leader') {
+      return creatorId === activeUser.id || task.department_id === activeUser.department_id;
+    }
+    if (creatorId === activeUser.id) return true;
+    
+    // Check if current user is an assignee and has 'edit' permission
+    const selfAssignee = task.assignees?.find(a => a.id === activeUser.id);
+    return !!(selfAssignee && (selfAssignee.permission === 'edit' || !selfAssignee.permission));
+  })();
+
   const [title, setTitle] = useState(task.title || '');
   const [description, setDescription] = useState(task.description || '');
   const [status, setStatus] = useState(task.status || 'todo');
@@ -272,6 +296,15 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       return [task.assignee.id];
     }
     return [];
+  });
+  const [assigneePermissions, setAssigneePermissions] = useState(() => {
+    const perms = {};
+    if (task.assignees && Array.isArray(task.assignees)) {
+      task.assignees.forEach(a => {
+        perms[a.id] = a.permission || 'edit';
+      });
+    }
+    return perms;
   });
   const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
   
@@ -476,7 +509,12 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
   };
 
   const handleSave = () => {
-    const selectedAssigneeObjects = teamMembers.filter(u => assigneeIds.includes(u.id));
+    const selectedAssigneeObjects = teamMembers
+      .filter(u => assigneeIds.includes(u.id))
+      .map(u => ({
+        ...u,
+        permission: assigneePermissions[u.id] || 'edit'
+      }));
     const parsedStartDate = startDate ? new Date(startDate) : null;
     const parsedDate = dueDate ? new Date(dueDate) : null;
 
@@ -526,6 +564,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 value={title} 
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Nhập tiêu đề công việc..."
+                disabled={!canEdit}
               />
             </div>
 
@@ -537,6 +576,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Thêm mô tả chi tiết về nội dung công việc, yêu cầu hoặc ghi chú..."
+                disabled={!canEdit}
               />
             </div>
 
@@ -592,6 +632,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 className="modal-select" 
                 value={status} 
                 onChange={(e) => setStatus(e.target.value)}
+                disabled={!canEdit}
               >
                 {STATUS_OPTIONS.map(opt => (
                   <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -690,13 +731,15 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                   return filteredTeamMembers.map(u => {
                     const isChecked = assigneeIds.includes(u.id);
                     return (
-                      <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11px', color: isChecked ? '#fff' : 'var(--text-secondary)', margin: 0 }}>
+                      <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEdit ? 'pointer' : 'default', fontSize: '11px', color: isChecked ? '#fff' : 'var(--text-secondary)', margin: 0 }}>
                         <input
                           type="checkbox"
                           checked={isChecked}
+                          disabled={!canEdit}
                           onChange={(e) => {
                             if (e.target.checked) {
                               setAssigneeIds([...assigneeIds, u.id]);
+                              setAssigneePermissions(prev => ({ ...prev, [u.id]: prev[u.id] || 'edit' }));
                             } else {
                               setAssigneeIds(assigneeIds.filter(id => id !== u.id));
                             }
@@ -705,13 +748,50 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                             accentColor: '#8b5cf6',
                             width: '13px',
                             height: '13px',
-                            cursor: 'pointer'
+                            cursor: canEdit ? 'pointer' : 'default'
                           }}
                         />
                         <img src={u.avatar} alt={u.name} style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
                         <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {u.name} <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>({u.role})</span>
                         </span>
+                        {isChecked && hasFullControl && (
+                          <select
+                            value={assigneePermissions[u.id] || 'edit'}
+                            onChange={(e) => {
+                              const newPerm = e.target.value;
+                              setAssigneePermissions(prev => ({ ...prev, [u.id]: newPerm }));
+                            }}
+                            style={{
+                              background: '#27272a',
+                              border: '1px solid rgba(255,255,255,0.08)',
+                              borderRadius: '4px',
+                              color: '#fff',
+                              fontSize: '9px',
+                              padding: '2px 4px',
+                              marginLeft: 'auto',
+                              cursor: 'pointer',
+                              outline: 'none'
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="edit">Edit</option>
+                            <option value="view">View</option>
+                          </select>
+                        )}
+                        {isChecked && !hasFullControl && (
+                          <span style={{
+                            fontSize: '9.5px',
+                            color: 'var(--text-muted)',
+                            marginLeft: 'auto',
+                            background: 'rgba(255,255,255,0.04)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(255,255,255,0.06)'
+                          }}>
+                            {(assigneePermissions[u.id] || 'edit') === 'edit' ? 'Được sửa' : 'Chỉ xem'}
+                          </span>
+                        )}
                       </label>
                     );
                   });
@@ -729,6 +809,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 className="modal-select" 
                 value={priority} 
                 onChange={(e) => setPriority(e.target.value)}
+                disabled={!canEdit}
               >
                 {PRIORITIES.map(p => (
                   <option key={p.id} value={p.id}>{p.label}</option>
@@ -747,6 +828,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 className="modal-select"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                disabled={!canEdit}
               />
               {task.actualStartDate && (
                 <div style={{ 
@@ -780,6 +862,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 className="modal-select"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
+                disabled={!canEdit}
               />
             </div>
 
@@ -796,6 +879,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                   const val = e.target.value;
                   setReminderBeforeMinutes(val === '-1' ? null : Number(val));
                 }}
+                disabled={!canEdit}
               >
                 <option value="-1">Không nhắc nhở</option>
                 <option value="15">Trước 15 phút</option>
@@ -813,7 +897,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                   <Link size={12} style={{ color: '#8b5cf6' }} />
                   Liên kết Teams ({teamsLinks.length})
                 </label>
-                {teamsLinks.length > 0 && (
+                {teamsLinks.length > 0 && canEdit && (
                   <button
                     type="button"
                     onClick={handleOpenPicker}
@@ -843,7 +927,7 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
               {teamsLinks.length === 0 ? (
                 <button
                   type="button"
-                  onClick={handleOpenPicker}
+                  onClick={canEdit ? handleOpenPicker : undefined}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -851,29 +935,31 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                     gap: '6px',
                     width: '100%',
                     padding: '10px 12px',
-                    background: 'rgba(139, 92, 246, 0.06)',
-                    border: '1px dashed rgba(139, 92, 246, 0.3)',
+                    background: canEdit ? 'rgba(139, 92, 246, 0.06)' : 'rgba(255,255,255,0.02)',
+                    border: canEdit ? '1px dashed rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.04)',
                     borderRadius: '10px',
                     fontSize: '11px',
                     fontWeight: '600',
-                    color: '#c084fc',
-                    cursor: 'pointer',
+                    color: canEdit ? '#c084fc' : 'var(--text-muted)',
+                    cursor: canEdit ? 'pointer' : 'default',
                     transition: 'all 0.2s ease',
                     outline: 'none'
                   }}
                   onMouseEnter={(e) => {
+                    if (!canEdit) return;
                     e.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)';
                     e.currentTarget.style.borderStyle = 'solid';
                     e.currentTarget.style.transform = 'translateY(-1px)';
                   }}
                   onMouseLeave={(e) => {
+                    if (!canEdit) return;
                     e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)';
                     e.currentTarget.style.borderStyle = 'dashed';
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
                   <MessageCircle size={13} />
-                  Liên kết Microsoft Teams
+                  {canEdit ? 'Liên kết Microsoft Teams' : 'Không có liên kết Teams'}
                 </button>
               ) : (
                 <div style={{
@@ -1007,25 +1093,29 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 {tags.map(tag => (
                   <span key={tag} className="modal-tag-badge">
                     #{tag}
-                    <button 
-                      type="button" 
-                      className="modal-tag-remove" 
-                      onClick={() => handleRemoveTag(tag)}
-                    >
-                      &times;
-                    </button>
+                    {canEdit && (
+                      <button 
+                        type="button" 
+                        className="modal-tag-remove" 
+                        onClick={() => handleRemoveTag(tag)}
+                      >
+                        &times;
+                      </button>
+                    )}
                   </span>
                 ))}
-                <input 
-                  type="text" 
-                  className="modal-tag-input" 
-                  placeholder="+ Thêm thẻ..."
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={handleAddTag}
-                />
+                {canEdit && (
+                  <input 
+                    type="text" 
+                    className="modal-tag-input" 
+                    placeholder="+ Thêm thẻ..."
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={handleAddTag}
+                  />
+                )}
               </div>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>Gõ tên tag và nhấn Enter để thêm nhanh</span>
+              {canEdit && <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>Gõ tên tag và nhấn Enter để thêm nhanh</span>}
             </div>
 
             {/* Microsoft Teams Graph Picker Dialog Overlay */}
@@ -1209,8 +1299,26 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
 
         {/* Footer actions */}
         <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose}>Hủy</button>
-          <button className="btn-primary" onClick={handleSave}>Lưu thay đổi</button>
+          {!canEdit && (
+            <span style={{ 
+              fontSize: '11px', 
+              color: '#fb7185', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              marginRight: 'auto',
+              background: 'rgba(244, 63, 94, 0.08)',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid rgba(244, 63, 94, 0.15)',
+              fontWeight: '600'
+            }}>
+              <ShieldAlert size={12} />
+              Chế độ chỉ xem (Bạn không có quyền sửa)
+            </span>
+          )}
+          <button className="btn-secondary" onClick={onClose}>{canEdit ? 'Hủy' : 'Đóng'}</button>
+          {canEdit && <button className="btn-primary" onClick={handleSave}>Lưu thay đổi</button>}
         </div>
       </div>
     </div>

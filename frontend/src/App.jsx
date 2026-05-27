@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, User, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3, Calendar, ChevronLeft, ChevronRight, Clock, CalendarDays, Edit2, Settings } from 'lucide-react';
+import { Sparkles, ToggleLeft, ToggleRight, Radio, Filter, RefreshCw, Layers, ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen, LogOut, Key, AlertTriangle, Users, User, Bell, Check, Trash2, BellOff, X, ShieldAlert, Tag, BarChart3, Calendar, ChevronLeft, ChevronRight, Clock, CalendarDays, Edit2, Settings, Undo, Redo } from 'lucide-react';
 import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
@@ -21,6 +21,25 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false); // Turn off simulation by default for DB sync stability
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'mine'
   
+  // Premium DB-Backed Search and Filtering States
+  const [searchInputValue, setSearchInputValue] = useState(() => {
+    return localStorage.getItem('synapse_search_input') || '';
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPriorities, setSelectedPriorities] = useState(() => {
+    const saved = localStorage.getItem('synapse_selected_priorities');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedStatuses, setSelectedStatuses] = useState(() => {
+    const saved = localStorage.getItem('synapse_selected_statuses');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedAssignees, setSelectedAssignees] = useState(() => {
+    const saved = localStorage.getItem('synapse_selected_assignees');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const searchInputRef = useRef(null);
+  
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('synapse_active_tab') || 'board';
   }); // 'board' | 'analytics' | 'calendar'
@@ -41,6 +60,9 @@ export default function App() {
   const [calendarViewMode, setCalendarViewMode] = useState(() => {
     return localStorage.getItem('synapse_calendar_view_mode') || 'single_month';
   });
+  const [calendarTaskPerspective, setCalendarTaskPerspective] = useState(() => {
+    return localStorage.getItem('synapse_calendar_task_perspective') || 'duration';
+  });
   const [infiniteScrollMinOffset, setInfiniteScrollMinOffset] = useState(-2);
   const [infiniteScrollMaxOffset, setInfiniteScrollMaxOffset] = useState(2);
   const [calendarListGroupingMode, setCalendarListGroupingMode] = useState(() => {
@@ -57,6 +79,15 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifDropdownRef = useRef(null);
+
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [toasts, setToasts] = useState([]);
+
+  const undoStackRef = useRef(undoStack);
+  undoStackRef.current = undoStack;
+  const redoStackRef = useRef(redoStack);
+  redoStackRef.current = redoStack;
 
   const simulationIntervalRef = useRef(null);
   const microsoftPopupRef = useRef(null);
@@ -88,6 +119,14 @@ export default function App() {
     const saved = localStorage.getItem('synapse_sidebar_open');
     return saved !== 'false'; // defaults to true
   });
+
+  // Admin Panel States
+  const [departments, setDepartments] = useState([]);
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState('users'); // 'users' | 'departments'
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newDeptDesc, setNewDeptDesc] = useState('');
+  const [editingDept, setEditingDept] = useState(null); // { id, name, description }
+  const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
 
   // ───────────────────────────────────────────────
   // SILENT LOGIN & INITIALIZATION
@@ -176,13 +215,71 @@ export default function App() {
   }, [isLoggedIn]);
 
   // ───────────────────────────────────────────────
-  // DATA POLLING LOOP
+  // DEBOUNCE EFFECT FOR SEARCH INPUT & PERSISTENCE
   // ───────────────────────────────────────────────
-  const fetchDbData = async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInputValue);
+    }, 300);
+    localStorage.setItem('synapse_search_input', searchInputValue);
+    return () => clearTimeout(timer);
+  }, [searchInputValue]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_selected_priorities', JSON.stringify(selectedPriorities));
+  }, [selectedPriorities]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_selected_statuses', JSON.stringify(selectedStatuses));
+  }, [selectedStatuses]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_selected_assignees', JSON.stringify(selectedAssignees));
+  }, [selectedAssignees]);
+
+  // ───────────────────────────────────────────────
+  // KEYBOARD SHORTCUTS FOR SEARCH FOCUS
+  // ───────────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Focus search input when user presses Ctrl+K / Cmd+K or / (excluding when inside editable inputs/textareas)
+      const activeEl = document.activeElement;
+      const isInputFocused = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.isContentEditable
+      );
+
+      const isKKey = e.key.toLowerCase() === 'k';
+      const isSlash = e.key === '/';
+      
+      if (((e.metaKey || e.ctrlKey) && isKKey) || (isSlash && !isInputFocused)) {
+        if (searchInputRef.current) {
+          e.preventDefault();
+          searchInputRef.current.focus();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // ───────────────────────────────────────────────
+  // DATA POLLING LOOP WITH SEARCH & FILTERS
+  // ───────────────────────────────────────────────
+  const fetchDbData = async (query = searchQuery, priorities = selectedPriorities, statuses = selectedStatuses, mode = filterMode, assignees = selectedAssignees) => {
     if (!isLoggedIn) return;
     try {
+      const params = {};
+      if (query.trim()) params.q = query.trim();
+      if (priorities.length > 0) params.priority = priorities.join(',');
+      if (statuses.length > 0) params.status = statuses.join(',');
+      if (assignees.length > 0) params.assignee = assignees.join(',');
+      if (mode === 'mine') params.filterMode = 'mine';
+
       const [fetchedTasks, fetchedUsers, fetchedLogs] = await Promise.all([
-        api.getTasks(),
+        api.getTasks(params),
         api.getUsers(),
         api.getLogs()
       ]);
@@ -194,15 +291,22 @@ export default function App() {
     }
   };
 
+  // Re-fetch data on active filter or search changes
   useEffect(() => {
     if (isLoggedIn) {
-      fetchDbData();
+      fetchDbData(searchQuery, selectedPriorities, selectedStatuses, filterMode, selectedAssignees);
+    }
+  }, [searchQuery, selectedPriorities, selectedStatuses, filterMode, selectedAssignees, isLoggedIn]);
 
-      // Auto polling every 10 seconds to sync Teams & background message updates instantly!
-      const timer = setInterval(fetchDbData, 10000);
+  // Handle auto polling loop (auto updates respect active filters)
+  useEffect(() => {
+    if (isLoggedIn) {
+      const timer = setInterval(() => {
+        fetchDbData(searchQuery, selectedPriorities, selectedStatuses, filterMode, selectedAssignees);
+      }, 10000);
       return () => clearInterval(timer);
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, searchQuery, selectedPriorities, selectedStatuses, filterMode, selectedAssignees]);
 
   // Load calendar settings on login
   const fetchCalendarSettings = async () => {
@@ -223,6 +327,23 @@ export default function App() {
       fetchCalendarSettings();
     }
   }, [isLoggedIn]);
+
+  // Fetch departments for Admin operations
+  const fetchDepartments = async () => {
+    if (!isLoggedIn || activeUserRef.current?.role !== 'Admin') return;
+    try {
+      const data = await api.getDepartments();
+      setDepartments(data);
+    } catch (err) {
+      console.error('Lỗi tải danh sách phòng ban:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoggedIn && activeUser?.role === 'Admin') {
+      fetchDepartments();
+    }
+  }, [isLoggedIn, activeUser]);
 
 
   // Persist UI collapses
@@ -249,6 +370,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('synapse_calendar_view_mode', calendarViewMode);
   }, [calendarViewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_calendar_task_perspective', calendarTaskPerspective);
+  }, [calendarTaskPerspective]);
 
   useEffect(() => {
     localStorage.setItem('synapse_calendar_list_grouping_mode', calendarListGroupingMode);
@@ -395,6 +520,98 @@ export default function App() {
   };
 
   // ───────────────────────────────────────────────
+  // ADMIN DEPARTMENTS & USERS CONTROLLER
+  // ───────────────────────────────────────────────
+  const handleUpdateUserRoleDept = async (userId, role, departmentId) => {
+    try {
+      setLoading(true);
+      const payload = {
+        role,
+        departmentId: departmentId || null
+      };
+      await api.updateUserRoleDept(userId, payload);
+      showToast("Đã cập nhật vai trò và phòng ban thành công!", null, "", "success");
+      
+      // Sync local states
+      await Promise.all([
+        fetchDbData(),
+        fetchDepartments()
+      ]);
+    } catch (err) {
+      showToast("Không thể cập nhật thành viên: " + err.message, null, "", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateDepartment = async (e) => {
+    if (e) e.preventDefault();
+    if (!newDeptName || !newDeptName.trim()) {
+      showToast("Tên phòng ban không được để trống", null, "", "error");
+      return;
+    }
+    try {
+      setLoading(true);
+      await api.createDepartment({
+        name: newDeptName.trim(),
+        description: newDeptDesc.trim()
+      });
+      showToast("Đã tạo phòng ban thành công!", null, "", "success");
+      setNewDeptName('');
+      setNewDeptDesc('');
+      setIsAddDeptOpen(false);
+      await fetchDepartments();
+    } catch (err) {
+      showToast("Không thể tạo phòng ban: " + err.message, null, "", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateDepartment = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingDept || !editingDept.name || !editingDept.name.trim()) {
+      showToast("Tên phòng ban không được để trống", null, "", "error");
+      return;
+    }
+    try {
+      setLoading(true);
+      await api.updateDepartment(editingDept.id, {
+        name: editingDept.name.trim(),
+        description: editingDept.description?.trim() || ''
+      });
+      showToast("Đã cập nhật phòng ban thành công!", null, "", "success");
+      setEditingDept(null);
+      await fetchDepartments();
+    } catch (err) {
+      showToast("Không thể cập nhật phòng ban: " + err.message, null, "", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteDepartment = async (deptId) => {
+    const dept = departments.find(d => d.id === deptId);
+    if (!dept) return;
+    if (!confirm(`Bạn có chắc muốn xóa phòng ban [${dept.name}] không? \nLưu ý: Mọi nhân sự và task thuộc phòng ban này sẽ được đưa về trạng thái tự do (NULL) một cách an toàn.`)) {
+      return;
+    }
+    try {
+      setLoading(true);
+      await api.deleteDepartment(deptId);
+      showToast("Đã xóa phòng ban thành công!", null, "", "success");
+      await Promise.all([
+        fetchDepartments(),
+        fetchDbData()
+      ]);
+    } catch (err) {
+      showToast("Không thể xóa phòng ban: " + err.message, null, "", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ───────────────────────────────────────────────
   // NOTIFICATION UTILITIES
   // ───────────────────────────────────────────────
   const handleNotificationClick = async (notif) => {
@@ -439,6 +656,103 @@ export default function App() {
   };
 
   // ───────────────────────────────────────────────
+  // PREMIUM TOAST & UNDO/REDO SUB-SYSTEM
+  // ───────────────────────────────────────────────
+  const showToast = (message, action = null, actionLabel = '', type = 'info') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    setToasts(prev => [...prev, { id, message, action, actionLabel, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 6000); // 6s duration
+  };
+
+  const handleUndo = async () => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+
+    const action = stack[stack.length - 1];
+    setUndoStack(prev => prev.slice(0, -1));
+
+    try {
+      if (action.type === 'DELETE_TASK') {
+        await api.restoreTask(action.taskId);
+        setRedoStack(prev => [...prev, action]);
+        showToast(`Đã khôi phục công việc "${action.task.title}"`, null, '', 'success');
+      } else if (action.type === 'UPDATE_TASK') {
+        const oldPayload = { ...action.oldValues };
+        
+        if (action.oldValues.hasOwnProperty('assignees')) {
+          oldPayload.assigneeIds = action.oldValues.assignees ? action.oldValues.assignees.map(a => a.id) : [];
+        }
+
+        await api.updateTask(action.taskId, oldPayload);
+        setRedoStack(prev => [...prev, action]);
+        showToast(`Đã hoàn tác cập nhật công việc "${action.taskTitle}"`, null, '', 'success');
+      }
+      fetchDbData();
+    } catch (err) {
+      showToast(`Không thể hoàn tác: ${err.message}`, null, '', 'error');
+    }
+  };
+
+  const handleRedo = async () => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+
+    const action = stack[stack.length - 1];
+    setRedoStack(prev => prev.slice(0, -1));
+
+    try {
+      if (action.type === 'DELETE_TASK') {
+        await api.deleteTask(action.taskId);
+        setUndoStack(prev => [...prev, action]);
+        showToast(`Đã thực hiện lại xóa công việc "${action.task.title}"`, null, '', 'success');
+      } else if (action.type === 'UPDATE_TASK') {
+        const newPayload = { ...action.newValues };
+        
+        if (action.newValues.hasOwnProperty('assignees')) {
+          newPayload.assigneeIds = action.newValues.assignees ? action.newValues.assignees.map(a => a.id) : [];
+        }
+
+        await api.updateTask(action.taskId, newPayload);
+        setUndoStack(prev => [...prev, action]);
+        showToast(`Đã thực hiện lại cập nhật công việc "${action.taskTitle}"`, null, '', 'success');
+      }
+      fetchDbData();
+    } catch (err) {
+      showToast(`Không thể thực hiện lại: ${err.message}`, null, '', 'error');
+    }
+  };
+
+  // Keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl.tagName === 'INPUT' || 
+                      activeEl.tagName === 'TEXTAREA' || 
+                      activeEl.isContentEditable;
+      if (isInput) return;
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      if (isCtrlOrCmd && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if (isCtrlOrCmd && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // ───────────────────────────────────────────────
   // CRUD TASK ACTIONS
   // ───────────────────────────────────────────────
   const handleAddTask = async (taskData) => {
@@ -464,7 +778,54 @@ export default function App() {
   };
 
   const handleUpdateTask = async (taskId, updates) => {
+    const currentTask = tasks.find(t => t.id === taskId);
+    if (!currentTask) return;
+
+    // Detect actually changed fields to support Undo/Redo
+    const oldValues = {};
+    const newValues = {};
+    let isChanged = false;
+
+    for (const key of Object.keys(updates)) {
+      let isDifferent = false;
+      let oldVal = currentTask[key];
+      let newVal = updates[key];
+
+      if (key === 'dueDate' || key === 'startDate') {
+        const t1 = oldVal ? new Date(oldVal).getTime() : 0;
+        const t2 = newVal ? new Date(newVal).getTime() : 0;
+        isDifferent = t1 !== t2;
+      } else if (key === 'assignees') {
+        const ids1 = oldVal ? oldVal.map(a => a.id).sort().join(',') : '';
+        const ids2 = newVal ? newVal.map(a => a.id).sort().join(',') : '';
+        isDifferent = ids1 !== ids2;
+      } else if (key === 'tags') {
+        const tags1 = oldVal ? [...oldVal].sort().join(',') : '';
+        const tags2 = newVal ? [...newVal].sort().join(',') : '';
+        isDifferent = tags1 !== tags2;
+      } else {
+        isDifferent = oldVal !== newVal;
+      }
+
+      if (isDifferent) {
+        oldValues[key] = oldVal;
+        newValues[key] = newVal;
+        isChanged = true;
+      }
+    }
+
     try {
+      if (isChanged) {
+        setUndoStack(prev => [...prev, {
+          type: 'UPDATE_TASK',
+          taskId,
+          oldValues,
+          newValues,
+          taskTitle: currentTask.title
+        }]);
+        setRedoStack([]); // Clear redo stack on new action
+      }
+
       const backendUpdates = { ...updates };
 
       // Map assignees fields to correct assigneeIds array
@@ -491,18 +852,72 @@ export default function App() {
         return t;
       }));
 
+      if (isChanged) {
+        let fieldName = 'công việc';
+        if (Object.keys(newValues).length === 1) {
+          const changedKey = Object.keys(newValues)[0];
+          const keyNames = {
+            title: 'tiêu đề',
+            status: 'trạng thái',
+            priority: 'độ ưu tiên',
+            dueDate: 'hạn chót',
+            startDate: 'ngày bắt đầu',
+            assignees: 'người thực hiện',
+            description: 'mô tả',
+            tags: 'nhãn dán'
+          };
+          fieldName = keyNames[changedKey] || changedKey;
+        }
+        showToast(`Đã cập nhật ${fieldName} của "${currentTask.title}"`, () => handleUndo(), 'Hoàn tác', 'info');
+      }
+
       fetchDbData();
     } catch (err) {
-      alert('Lỗi cập nhật công việc: ' + err.message);
+      showToast('Lỗi cập nhật công việc: ' + err.message, null, '', 'error');
     }
   };
 
+  const canDeleteTask = (task) => {
+    if (!activeUser) return false;
+    if (activeUser.role === 'Admin') return true;
+    const creatorId = task.creator?.id || task.creator_id || '';
+    if (activeUser.role === 'Team_Leader') {
+      return creatorId === activeUser.id || task.department_id === activeUser.department_id;
+    }
+    return creatorId === activeUser.id;
+  };
+
+  const canEditTask = (task) => {
+    if (!activeUser) return false;
+    if (activeUser.role === 'Admin') return true;
+    const creatorId = task.creator?.id || task.creator_id || '';
+    if (activeUser.role === 'Team_Leader') {
+      return creatorId === activeUser.id || task.department_id === activeUser.department_id;
+    }
+    if (creatorId === activeUser.id) return true;
+    
+    // Check if assigned and has edit permission
+    const selfAssignee = task.assignees?.find(a => a.id === activeUser.id);
+    return !!(selfAssignee && (selfAssignee.permission === 'edit' || !selfAssignee.permission));
+  };
+
   const handleDeleteTask = async (taskId) => {
+    const taskToBackup = tasks.find(t => t.id === taskId);
+    if (!taskToBackup) return;
+
     try {
+      setUndoStack(prev => [...prev, {
+        type: 'DELETE_TASK',
+        taskId,
+        task: taskToBackup
+      }]);
+      setRedoStack([]); // Clear redo stack on new action
+
       await api.deleteTask(taskId);
+      showToast(`Đã xóa công việc "${taskToBackup.title}"`, () => handleUndo(), 'Hoàn tác', 'info');
       fetchDbData();
     } catch (err) {
-      alert('Lỗi xóa công việc: ' + err.message);
+      showToast('Lỗi xóa công việc: ' + err.message, null, '', 'error');
     }
   };
 
@@ -952,6 +1367,19 @@ export default function App() {
     const cellTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
     const endTime = new Date(new Date(task.dueDate).getFullYear(), new Date(task.dueDate).getMonth(), new Date(task.dueDate).getDate()).getTime();
     
+    const today = new Date();
+    const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+    if (calendarTaskPerspective === 'deadline') {
+      if (task.status === 'done') {
+        return cellTime === endTime;
+      }
+      if (endTime < todayTime) {
+        return cellTime >= endTime && cellTime <= todayTime;
+      }
+      return cellTime === endTime;
+    }
+
     let startTime;
     if (task.startDate) {
       startTime = new Date(new Date(task.startDate).getFullYear(), new Date(task.startDate).getMonth(), new Date(task.startDate).getDate()).getTime();
@@ -962,9 +1390,6 @@ export default function App() {
 
     // Nếu task chưa hoàn thành và đã quá hạn (dueDate < Today), ta kéo dải hiển thị tới ngày hôm nay
     let finalEndTime = endTime;
-    const today = new Date();
-    const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    
     if (task.status !== 'done' && endTime < todayTime) {
       finalEndTime = todayTime;
     }
@@ -1311,7 +1736,9 @@ export default function App() {
                       const endTime = new Date(new Date(t.dueDate).getFullYear(), new Date(t.dueDate).getMonth(), new Date(t.dueDate).getDate()).getTime();
                       
                       let startTime;
-                      if (t.startDate) {
+                      if (calendarTaskPerspective === 'deadline') {
+                        startTime = endTime;
+                      } else if (t.startDate) {
                         startTime = new Date(new Date(t.startDate).getFullYear(), new Date(t.startDate).getMonth(), new Date(t.startDate).getDate()).getTime();
                       } else {
                         const created = t.createdAt || t.created_at || new Date();
@@ -1694,29 +2121,50 @@ export default function App() {
               </div>
 
               {!isCalendarGridMinimized && (
-                <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '10px', padding: '2px' }}>
-                  <button 
-                    onClick={() => setCalendarViewMode('single_month')}
-                    className="calendar-nav-btn"
-                    style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'single_month' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'single_month' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'single_month' ? '#c084fc' : 'var(--text-secondary)' }}
-                  >
-                    1 Tháng
-                  </button>
-                  <button 
-                    onClick={() => setCalendarViewMode('three_months')}
-                    className="calendar-nav-btn"
-                    style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'three_months' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'three_months' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'three_months' ? '#c084fc' : 'var(--text-secondary)' }}
-                  >
-                    3 Tháng
-                  </button>
-                  <button 
-                    onClick={() => setCalendarViewMode('infinite_scroll')}
-                    className="calendar-nav-btn"
-                    style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'infinite_scroll' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'infinite_scroll' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'infinite_scroll' ? '#c084fc' : 'var(--text-secondary)' }}
-                  >
-                    Cuộn vô tận
-                  </button>
-                </div>
+                <>
+                  <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '10px', padding: '2px' }}>
+                    <button 
+                      onClick={() => setCalendarViewMode('single_month')}
+                      className="calendar-nav-btn"
+                      style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'single_month' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'single_month' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'single_month' ? '#c084fc' : 'var(--text-secondary)' }}
+                    >
+                      1 Tháng
+                    </button>
+                    <button 
+                      onClick={() => setCalendarViewMode('three_months')}
+                      className="calendar-nav-btn"
+                      style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'three_months' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'three_months' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'three_months' ? '#c084fc' : 'var(--text-secondary)' }}
+                    >
+                      3 Tháng
+                    </button>
+                    <button 
+                      onClick={() => setCalendarViewMode('infinite_scroll')}
+                      className="calendar-nav-btn"
+                      style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarViewMode === 'infinite_scroll' ? 'rgba(139, 92, 246, 0.15)' : 'transparent', borderColor: calendarViewMode === 'infinite_scroll' ? 'rgba(139, 92, 246, 0.25)' : 'transparent', color: calendarViewMode === 'infinite_scroll' ? '#c084fc' : 'var(--text-secondary)' }}
+                    >
+                      Cuộn vô tận
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '10px', padding: '2px' }}>
+                    <button 
+                      onClick={() => setCalendarTaskPerspective('duration')}
+                      className="calendar-nav-btn"
+                      style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarTaskPerspective === 'duration' ? 'rgba(6, 182, 212, 0.15)' : 'transparent', borderColor: calendarTaskPerspective === 'duration' ? 'rgba(6, 182, 212, 0.25)' : 'transparent', color: calendarTaskPerspective === 'duration' ? '#22d3ee' : 'var(--text-secondary)' }}
+                      title="Hiển thị task từ ngày bắt đầu đến ngày hạn chót"
+                    >
+                      Thời gian làm
+                    </button>
+                    <button 
+                      onClick={() => setCalendarTaskPerspective('deadline')}
+                      className="calendar-nav-btn"
+                      style={{ fontSize: '11px', fontWeight: '600', width: 'auto', padding: '4px 12px', height: '26px', background: calendarTaskPerspective === 'deadline' ? 'rgba(6, 182, 212, 0.15)' : 'transparent', borderColor: calendarTaskPerspective === 'deadline' ? 'rgba(6, 182, 212, 0.25)' : 'transparent', color: calendarTaskPerspective === 'deadline' ? '#22d3ee' : 'var(--text-secondary)' }}
+                      title="Hiển thị task tại ngày hạn chót (và kéo dài đến hiện tại nếu chưa hoàn thành)"
+                    >
+                      Hạn chót
+                    </button>
+                  </div>
+                </>
               )}
 
               <div className="calendar-nav-group">
@@ -1989,17 +2437,19 @@ export default function App() {
                             </div>
 
                             {/* subtle hover delete button */}
-                            <button
-                              className="card-delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteTask(task.id);
-                              }}
-                              title="Xóa công việc"
-                              style={{ padding: '2px', cursor: 'pointer' }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            {canDeleteTask(task) && (
+                              <button
+                                className="card-delete-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteTask(task.id);
+                                }}
+                                title="Xóa công việc"
+                                style={{ padding: '2px', cursor: 'pointer' }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
 
                         </div>
@@ -2265,16 +2715,18 @@ export default function App() {
                                         <Edit2 size={11} />
                                       </button>
 
-                                      <button
-                                        className="card-delete-btn"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteTask(task.id);
-                                        }}
-                                        title="Xóa công việc"
-                                      >
-                                        <Trash2 size={13} />
-                                      </button>
+                                      {canDeleteTask(task) && (
+                                        <button
+                                          className="card-delete-btn"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTask(task.id);
+                                          }}
+                                          title="Xóa công việc"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
 
@@ -2805,6 +3257,355 @@ export default function App() {
     );
   };
 
+  // ───────────────────────────────────────────────
+  // ADMIN PANEL COMPONENT VIEW
+  // ───────────────────────────────────────────────
+  const renderAdminPanel = () => {
+    // Math statistics
+    const totalUsersCount = teamMembers.length;
+    const adminCount = teamMembers.filter(u => u.role === 'Admin').length;
+    const leaderCount = teamMembers.filter(u => u.role === 'Team_Leader').length;
+    const normalCount = teamMembers.filter(u => u.role === 'Normal_User').length;
+
+    return (
+      <div className="admin-panel-container">
+        {/* Admin Header */}
+        <div className="admin-header-row">
+          <div className="admin-title-area">
+            <h1 className="admin-title">Bảng Điều Khiển Quản Trị</h1>
+            <p className="admin-subtitle">Quản lý cơ cấu phòng ban, phân bổ nhân sự và phân quyền kiểm soát toàn hệ thống.</p>
+          </div>
+          
+          <div className="admin-tab-bar">
+            <button
+              onClick={() => setActiveAdminSubTab('users')}
+              className={`admin-subtab-btn ${activeAdminSubTab === 'users' ? 'active' : ''}`}
+            >
+              <Users size={14} />
+              Thành Viên & Vai Trò
+            </button>
+            <button
+              onClick={() => setActiveAdminSubTab('departments')}
+              className={`admin-subtab-btn ${activeAdminSubTab === 'departments' ? 'active' : ''}`}
+            >
+              <Layers size={14} />
+              Phòng Ban & Nhân Sự
+            </button>
+          </div>
+        </div>
+
+        {/* Subtab Panels */}
+        {activeAdminSubTab === 'users' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Quick Metrics */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              <div className="glass-panel" style={{ padding: '12px 20px', flex: '1', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tổng nhân sự</div>
+                  <div style={{ fontSize: '20px', fontWeight: '800', fontFamily: 'var(--font-title)', color: '#fff', marginTop: '4px' }}>{totalUsersCount}</div>
+                </div>
+                <div style={{ background: 'rgba(139, 92, 246, 0.1)', color: 'var(--primary)', padding: '10px', borderRadius: '10px' }}><Users size={20} /></div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '12px 20px', flex: '1', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Quản trị viên</div>
+                  <div style={{ fontSize: '20px', fontWeight: '800', fontFamily: 'var(--font-title)', color: '#fb7185', marginTop: '4px' }}>{adminCount}</div>
+                </div>
+                <div style={{ background: 'rgba(251, 113, 133, 0.1)', color: '#fb7185', padding: '10px', borderRadius: '10px' }}><ShieldAlert size={20} /></div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '12px 20px', flex: '1', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Trưởng nhóm</div>
+                  <div style={{ fontSize: '20px', fontWeight: '800', fontFamily: 'var(--font-title)', color: '#fbbf24', marginTop: '4px' }}>{leaderCount}</div>
+                </div>
+                <div style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#fbbf24', padding: '10px', borderRadius: '10px' }}><User size={20} /></div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '12px 20px', flex: '1', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Thành viên</div>
+                  <div style={{ fontSize: '20px', fontWeight: '800', fontFamily: 'var(--font-title)', color: '#34d399', marginTop: '4px' }}>{normalCount}</div>
+                </div>
+                <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#34d399', padding: '10px', borderRadius: '10px' }}><Users size={20} /></div>
+              </div>
+            </div>
+
+            {/* Users Table */}
+            <div className="admin-table-wrapper">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Thành Viên</th>
+                    <th>Vai Trò Hệ Thống</th>
+                    <th>Phòng Ban Phân Bổ</th>
+                    <th style={{ textAlign: 'right' }}>Bảo Mật & Phiên Đăng Nhập</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamMembers.map(member => (
+                    <tr key={member.id}>
+                      <td>
+                        <div className="user-profile-cell">
+                          <img
+                            src={member.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop'}
+                            alt={member.name}
+                            className="user-profile-avatar"
+                          />
+                          <div className="user-profile-info">
+                            <span className="user-profile-name">{member.name}</span>
+                            <span className="user-profile-username">@{member.id}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <select
+                          className="admin-select"
+                          value={member.role || 'Normal_User'}
+                          onChange={(e) => handleUpdateUserRoleDept(member.id, e.target.value, member.department_id)}
+                        >
+                          <option value="Admin">Quản trị viên (Admin)</option>
+                          <option value="Team_Leader">Trưởng nhóm (Team Leader)</option>
+                          <option value="Normal_User">Thành viên (Normal User)</option>
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className="admin-select"
+                          value={member.department_id || ''}
+                          onChange={(e) => handleUpdateUserRoleDept(member.id, member.role, e.target.value)}
+                        >
+                          <option value="">Không có phòng ban</option>
+                          {departments.map(dept => (
+                            <option key={dept.id} value={dept.id}>{dept.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          onClick={() => handleAdminRevokeSession(member.id)}
+                          className="admin-btn admin-btn-danger"
+                          style={{ marginLeft: 'auto' }}
+                          title="Thu hồi toàn bộ Token hoạt động của người dùng này và ép buộc đăng xuất khỏi mọi thiết bị"
+                        >
+                          <LogOut size={13} />
+                          Thu hồi phiên
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Header sub-row with Create button */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Danh sách các phòng ban trực thuộc đơn vị của bạn. Thẻ phòng ban hiển thị số lượng nhân sự trực thuộc phòng.
+              </div>
+              <button
+                onClick={() => setIsAddDeptOpen(true)}
+                className="admin-btn admin-btn-primary"
+              >
+                <Users size={14} />
+                Thêm phòng ban mới
+              </button>
+            </div>
+
+            {/* Department cards grid */}
+            <div className="dept-grid">
+              {departments.map(dept => (
+                <div key={dept.id} className="glass-panel dept-card">
+                  <div className="dept-card-bg-gradient" />
+                  <div className="dept-card-header">
+                    <div className="dept-info">
+                      <span className="dept-name">{dept.name}</span>
+                      <span className="dept-desc">{dept.description || <i>Không có mô tả cho phòng ban này.</i>}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
+                    <div className="dept-stats">
+                      <Users size={14} style={{ color: 'var(--info)' }} />
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Nhân sự:</span>
+                      <span className="dept-headcount">{dept.headcount || 0}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        onClick={() => setEditingDept(dept)}
+                        className="admin-btn admin-btn-secondary"
+                        style={{ padding: '6px 10px', fontSize: '11px' }}
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDepartment(dept.id)}
+                        className="admin-btn admin-btn-danger"
+                        style={{ padding: '6px 10px', fontSize: '11px' }}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {departments.length === 0 && (
+                <div className="glass-panel" style={{ gridColumn: '1/-1', padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <Users size={48} style={{ color: 'var(--text-muted)', marginBottom: '12px', opacity: 0.5 }} />
+                  <div>Chưa có phòng ban nào được tạo dựng trong hệ thống.</div>
+                  <button
+                    onClick={() => setIsAddDeptOpen(true)}
+                    className="admin-btn admin-btn-primary"
+                    style={{ margin: '16px auto 0 auto' }}
+                  >
+                    Tạo phòng ban ngay
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Thêm phòng ban mới */}
+        {isAddDeptOpen && (
+          <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', zIndex: 1000, backdropFilter: 'blur(8px)' }}>
+            <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '24px', position: 'relative' }}>
+              <button
+                onClick={() => {
+                  setIsAddDeptOpen(false);
+                  setNewDeptName('');
+                  setNewDeptDesc('');
+                }}
+                style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+              
+              <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Users size={18} style={{ color: 'var(--primary)' }} />
+                Tạo Phòng Ban Mới
+              </h2>
+
+              <form onSubmit={handleCreateDepartment} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Tên phòng ban <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '10px 12px', color: '#fff', fontSize: '13px', outline: 'none' }}
+                    placeholder="Ví dụ: Kỹ thuật, Marketing, PO..."
+                    value={newDeptName}
+                    onChange={(e) => setNewDeptName(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Mô tả ngắn</label>
+                  <textarea
+                    className="form-input"
+                    rows="3"
+                    style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '10px 12px', color: '#fff', fontSize: '13px', outline: 'none', resize: 'none' }}
+                    placeholder="Mô tả chức năng hoặc mục tiêu chính..."
+                    value={newDeptDesc}
+                    onChange={(e) => setNewDeptDesc(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddDeptOpen(false);
+                      setNewDeptName('');
+                      setNewDeptDesc('');
+                    }}
+                    className="admin-btn admin-btn-secondary"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="admin-btn admin-btn-primary"
+                  >
+                    Tạo phòng ban
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Chỉnh sửa phòng ban */}
+        {editingDept && (
+          <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', zIndex: 1000, backdropFilter: 'blur(8px)' }}>
+            <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '24px', position: 'relative' }}>
+              <button
+                onClick={() => setEditingDept(null)}
+                style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+              
+              <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit2 size={18} style={{ color: 'var(--primary)' }} />
+                Chỉnh Sửa Phòng Ban
+              </h2>
+
+              <form onSubmit={handleUpdateDepartment} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Tên phòng ban <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '10px 12px', color: '#fff', fontSize: '13px', outline: 'none' }}
+                    value={editingDept.name}
+                    onChange={(e) => setEditingDept({ ...editingDept, name: e.target.value })}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Mô tả ngắn</label>
+                  <textarea
+                    className="form-input"
+                    rows="3"
+                    style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '10px 12px', color: '#fff', fontSize: '13px', outline: 'none', resize: 'none' }}
+                    value={editingDept.description || ''}
+                    onChange={(e) => setEditingDept({ ...editingDept, description: e.target.value })}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingDept(null)}
+                    className="admin-btn admin-btn-secondary"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="admin-btn admin-btn-primary"
+                  >
+                    Lưu thay đổi
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading && !isLoggedIn) {
     return (
       <div className="login-screen" style={{ background: '#09090b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#fafafa' }}>
@@ -2999,11 +3800,83 @@ export default function App() {
           <Calendar size={13} style={{ color: '#06b6d4' }} />
           Lịch Công Việc
         </button>
+        {activeUser?.role === 'Admin' && (
+          <button
+            onClick={() => setActiveTab('admin')}
+            style={{
+              padding: '6px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: activeTab === 'admin' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'admin' ? '#fff' : 'var(--text-secondary)',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <ShieldAlert size={13} style={{ color: '#fb7185' }} />
+            Quản Trị Hệ Thống
+          </button>
+        )}
       </div>
 
 
         {/* Header Actions */}
         <div className="header-actions">
+
+          {/* Undo/Redo Header Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid rgba(255,255,255,0.08)', paddingRight: '16px', marginRight: '4px' }}>
+            <button
+              onClick={handleUndo}
+              disabled={undoStack.length === 0}
+              title={`Hoàn tác hành động gần nhất (Ctrl+Z) ${undoStack.length > 0 ? `\n- ${undoStack[undoStack.length - 1].type === 'DELETE_TASK' ? `Khôi phục "${undoStack[undoStack.length - 1].task.title}"` : `Hoàn tác cập nhật "${undoStack[undoStack.length - 1].taskTitle}"`}` : ''}`}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: undoStack.length === 0 ? 'not-allowed' : 'pointer',
+                color: undoStack.length === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                opacity: undoStack.length === 0 ? 0.3 : 1,
+                padding: '6px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                backgroundColor: undoStack.length > 0 ? 'rgba(255,255,255,0.02)' : 'transparent'
+              }}
+              onMouseEnter={(e) => { if (undoStack.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = undoStack.length > 0 ? 'rgba(255,255,255,0.02)' : 'transparent'; }}
+            >
+              <Undo size={15} />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={redoStack.length === 0}
+              title={`Làm lại hành động vừa hoàn tác (Ctrl+Y / Ctrl+Shift+Z) ${redoStack.length > 0 ? `\n- ${redoStack[redoStack.length - 1].type === 'DELETE_TASK' ? `Xóa lại "${redoStack[redoStack.length - 1].task.title}"` : `Cập nhật lại "${redoStack[redoStack.length - 1].taskTitle}"`}` : ''}`}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: redoStack.length === 0 ? 'not-allowed' : 'pointer',
+                color: redoStack.length === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                opacity: redoStack.length === 0 ? 0.3 : 1,
+                padding: '6px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                backgroundColor: redoStack.length > 0 ? 'rgba(255,255,255,0.02)' : 'transparent'
+              }}
+              onMouseEnter={(e) => { if (redoStack.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = redoStack.length > 0 ? 'rgba(255,255,255,0.02)' : 'transparent'; }}
+            >
+              <Redo size={15} />
+            </button>
+          </div>
 
           {/* Notification Bell Component */}
           <div className="notif-container" ref={notifDropdownRef}>
@@ -3174,6 +4047,8 @@ export default function App() {
         renderCalendarView()
       ) : activeTab === 'analytics' ? (
         renderAnalytics()
+      ) : activeTab === 'admin' && activeUser?.role === 'Admin' ? (
+        renderAdminPanel()
       ) : (
         <>
           {/* Interactive NLP Smart Input Area */}
@@ -3208,53 +4083,278 @@ export default function App() {
           </section>
 
           {/* Dashboard Filter and Board Title */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-            <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.5px' }}>
-              Bảng Tiến độ Công việc
-            </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+              <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Bảng Tiến độ Công việc
+                {tasks.length > 0 && (
+                  <span style={{ fontSize: '11px', fontWeight: '600', padding: '2px 8px', borderRadius: '20px', background: 'rgba(139, 92, 246, 0.1)', color: '#c084fc', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                    {tasks.length} việc
+                  </span>
+                )}
+              </h2>
 
-            {/* Filter Tabs */}
-            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: 'var(--glass-border)', padding: '3px', borderRadius: '8px', gap: '4px' }}>
-              <button
-                onClick={() => setFilterMode('all')}
-                style={{
-                  background: filterMode === 'all' ? 'var(--primary)' : 'none',
-                  border: 'none',
-                  color: filterMode === 'all' ? 'white' : 'var(--text-secondary)',
-                  fontSize: '12px',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: filterMode === 'all' ? '600' : 'normal',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Layers size={12} />
-                Tất cả công việc
-              </button>
-              <button
-                onClick={() => setFilterMode('mine')}
-                style={{
-                  background: filterMode === 'mine' ? 'var(--primary)' : 'none',
-                  border: 'none',
-                  color: filterMode === 'mine' ? 'white' : 'var(--text-secondary)',
-                  fontSize: '12px',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: filterMode === 'mine' ? '600' : 'normal',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Filter size={12} />
-                Chỉ việc của tôi
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                {/* Search Bar Input */}
+                <div className="search-bar-wrapper" style={{ position: 'relative', width: '280px' }}>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Tìm kiếm công việc (⌘K)..."
+                    value={searchInputValue}
+                    onChange={(e) => setSearchInputValue(e.target.value)}
+                    className="search-input-glass"
+                    style={{
+                      width: '100%',
+                      padding: '8px 36px 8px 32px',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      color: 'white',
+                      fontSize: '13px',
+                      outline: 'none',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                  />
+                  <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                    <Sparkles size={13} style={{ color: '#c084fc' }} />
+                  </div>
+                  {searchInputValue ? (
+                    <button
+                      onClick={() => setSearchInputValue('')}
+                      style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                      title="Xoá từ khoá"
+                    >
+                      <X size={12} />
+                    </button>
+                  ) : (
+                    <div className="shortcut-badge" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.06)', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '1px 4px', borderRadius: '4px', pointerEvents: 'none', fontFamily: 'monospace' }}>
+                      /
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter Tabs */}
+                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: 'var(--glass-border)', padding: '3px', borderRadius: '8px', gap: '4px' }}>
+                  <button
+                    onClick={() => setFilterMode('all')}
+                    style={{
+                      background: filterMode === 'all' ? 'var(--primary)' : 'none',
+                      border: 'none',
+                      color: filterMode === 'all' ? 'white' : 'var(--text-secondary)',
+                      fontSize: '12px',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: filterMode === 'all' ? '600' : 'normal',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Layers size={12} />
+                    Tất cả
+                  </button>
+                  <button
+                    onClick={() => setFilterMode('mine')}
+                    style={{
+                      background: filterMode === 'mine' ? 'var(--primary)' : 'none',
+                      border: 'none',
+                      color: filterMode === 'mine' ? 'white' : 'var(--text-secondary)',
+                      fontSize: '12px',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: filterMode === 'mine' ? '600' : 'normal',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Filter size={12} />
+                    Chỉ của tôi
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Premium Filtering Pills (Priorities, Statuses, Clear all) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '10px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Lọc nhanh:
+              </span>
+
+              {/* Priority Filter Pills */}
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {[
+                  { id: 'high', label: 'Khẩn cấp', color: '#ef4444' },
+                  { id: 'medium', label: 'Vừa', color: '#f59e0b' },
+                  { id: 'low', label: 'Thấp', color: '#10b981' }
+                ].map(prio => {
+                  const isActive = selectedPriorities.includes(prio.id);
+                  return (
+                    <button
+                      key={prio.id}
+                      onClick={() => {
+                        setSelectedPriorities(prev =>
+                          isActive ? prev.filter(p => p !== prio.id) : [...prev, prio.id]
+                        );
+                      }}
+                      className={`filter-pill-btn ${isActive ? 'active' : ''}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        border: isActive ? `1px solid ${prio.color}` : '1px solid rgba(255, 255, 255, 0.05)',
+                        background: isActive ? `${prio.color}15` : 'rgba(255, 255, 255, 0.02)',
+                        color: isActive ? prio.color : 'var(--text-secondary)',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: prio.color }} />
+                      {prio.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ width: '1px', height: '14px', background: 'rgba(255, 255, 255, 0.08)' }} />
+
+              {/* Status Filter Pills */}
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {[
+                  { id: 'todo', label: 'Cần làm', color: '#8b5cf6' },
+                  { id: 'in_progress', label: 'Đang làm', color: '#06b6d4' },
+                  { id: 'review', label: 'Review', color: '#f59e0b' },
+                  { id: 'done', label: 'Hoàn thành', color: '#10b981' }
+                ].map(col => {
+                  const isActive = selectedStatuses.includes(col.id);
+                  return (
+                    <button
+                      key={col.id}
+                      onClick={() => {
+                        setSelectedStatuses(prev =>
+                          isActive ? prev.filter(s => s !== col.id) : [...prev, col.id]
+                        );
+                      }}
+                      className={`filter-pill-btn ${isActive ? 'active' : ''}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        border: isActive ? `1px solid ${col.color}` : '1px solid rgba(255, 255, 255, 0.05)',
+                        background: isActive ? `${col.color}15` : 'rgba(255, 255, 255, 0.02)',
+                        color: isActive ? col.color : 'var(--text-secondary)',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {col.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ width: '1px', height: '14px', background: 'rgba(255, 255, 255, 0.08)' }} />
+
+              {/* Assignee Filter Pills */}
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginRight: '2px' }}>Giao cho:</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {teamMembers.map(member => {
+                    const isActive = selectedAssignees.includes(member.id);
+                    return (
+                      <button
+                        key={member.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAssignees(prev =>
+                            isActive ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                          );
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          borderRadius: '50%',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        title={`Lọc theo ${member.name}`}
+                      >
+                        <img
+                          src={member.avatar}
+                          alt={member.name}
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: isActive ? `2px solid var(--primary)` : '2px solid transparent',
+                            boxShadow: isActive ? '0 0 8px var(--primary-glow)' : 'none',
+                            transition: 'all 0.2s ease',
+                            opacity: isActive ? 1 : 0.65
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isActive) e.currentTarget.style.opacity = '1';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isActive) e.currentTarget.style.opacity = '0.65';
+                          }}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Clear All Filters Button */}
+              {(searchInputValue || selectedPriorities.length > 0 || selectedStatuses.length > 0 || selectedAssignees.length > 0) && (
+                <>
+                  <div style={{ width: '1px', height: '14px', background: 'rgba(255, 255, 255, 0.08)' }} />
+                  <button
+                    onClick={() => {
+                      setSearchInputValue('');
+                      setSelectedPriorities([]);
+                      setSelectedStatuses([]);
+                      setSelectedAssignees([]);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#f43f5e',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                  >
+                    Xóa bộ lọc
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -3268,6 +4368,7 @@ export default function App() {
                 onDeleteTask={handleDeleteTask}
                 onOpenTaskEditor={setSelectedTask}
                 teamMembers={teamMembers}
+                activeUser={activeUser}
               />
             </section>
 
@@ -3569,6 +4670,79 @@ export default function App() {
       <footer style={{ textAlign: 'center', padding: '24px 0 10px 0', fontSize: '11px', color: 'var(--text-muted)', borderTop: 'var(--glass-border)', marginTop: '20px' }}>
         Synapse Task Management Hub &copy; 2026. Phát triển bởi Antigravity AI Coding Assistant.
       </footer>
+
+      {/* Toast Container */}
+      <div style={{
+        position: 'fixed',
+        bottom: '24px',
+        right: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        zIndex: 9999,
+        pointerEvents: 'none'
+      }}>
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className="glass-panel fade-in"
+            style={{
+              padding: '12px 18px',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(18, 18, 20, 0.95)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              minWidth: '300px',
+              maxWidth: '450px',
+              pointerEvents: 'auto',
+              animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {toast.type === 'success' && <Check size={16} style={{ color: 'var(--success)' }} />}
+              {toast.type === 'info' && <Sparkles size={16} style={{ color: 'var(--primary)' }} />}
+              {toast.type === 'error' && <AlertTriangle size={16} style={{ color: 'var(--danger)' }} />}
+              <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: '500' }}>
+                {toast.message}
+              </span>
+            </div>
+            {toast.action && (
+              <button
+                onClick={() => {
+                  toast.action();
+                  setToasts(prev => prev.filter(t => t.id !== toast.id));
+                }}
+                style={{
+                  background: 'rgba(139, 92, 246, 0.15)',
+                  border: '1px solid var(--primary)',
+                  color: '#a78bfa',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--primary)';
+                  e.currentTarget.style.color = '#fff';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)';
+                  e.currentTarget.style.color = '#a78bfa';
+                }}
+              >
+                {toast.actionLabel}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

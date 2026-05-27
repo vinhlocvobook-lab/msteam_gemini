@@ -15,6 +15,7 @@ router.get('/', authenticateAppToken, async (req, res) => {
        FROM notifications n
        LEFT JOIN tasks t ON n.task_id = t.id
        WHERE n.user_id = ?
+         AND (t.is_deleted = 0 OR n.task_id IS NULL OR t.id IS NULL)
        ORDER BY n.created_at DESC
        LIMIT 100`,
       [userId]

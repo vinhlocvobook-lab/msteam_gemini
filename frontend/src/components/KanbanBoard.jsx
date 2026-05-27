@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Trash2, ShieldAlert, User, Check, Clock, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Trash2, ShieldAlert, User, Check, Clock, Edit2, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 
 const COLUMNS = [
@@ -9,10 +9,34 @@ const COLUMNS = [
   { id: 'done', title: 'Hoàn thành', color: '#10b981' }
 ];
 
-export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenTaskEditor, teamMembers = USERS }) {
+export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenTaskEditor, teamMembers = USERS, activeUser }) {
+  const canEditTask = (task) => {
+    if (!activeUser) return false;
+    if (activeUser.role === 'Admin') return true;
+    const creatorId = task.creator?.id || task.creator_id || '';
+    if (activeUser.role === 'Team_Leader') {
+      return creatorId === activeUser.id || task.department_id === activeUser.department_id;
+    }
+    if (creatorId === activeUser.id) return true;
+    
+    // Check if current user is an assignee and has 'edit' permission
+    const selfAssignee = task.assignees?.find(a => a.id === activeUser.id);
+    return !!(selfAssignee && (selfAssignee.permission === 'edit' || !selfAssignee.permission));
+  };
+
+  const canDeleteTask = (task) => {
+    if (!activeUser) return false;
+    if (activeUser.role === 'Admin') return true;
+    const creatorId = task.creator?.id || task.creator_id || '';
+    if (activeUser.role === 'Team_Leader') {
+      return creatorId === activeUser.id || task.department_id === activeUser.department_id;
+    }
+    return creatorId === activeUser.id;
+  };
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [dragOverColumnId, setDragOverColumnId] = useState(null);
   const [activePopup, setActivePopup] = useState(null); // { taskId, type: 'assignee' | 'priority' }
+  const [visibleDoneCount, setVisibleDoneCount] = useState(20);
 
   // Persisted collapse state for individual Kanban columns
   const [collapsedColumns, setCollapsedColumns] = useState(() => {
@@ -148,7 +172,16 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
   return (
     <div className="kanban-board" style={boardStyle} onClick={() => setActivePopup(null)}>
       {COLUMNS.map(col => {
-        const colTasks = tasks.filter(t => t.status === col.id);
+        let colTasks = tasks.filter(t => t.status === col.id);
+        if (col.id === 'done') {
+          // Sort by updatedAt DESC or createdAt DESC
+          colTasks = [...colTasks].sort((a, b) => {
+            const timeA = a.updatedAt ? new Date(a.updatedAt) : new Date(a.createdAt);
+            const timeB = b.updatedAt ? new Date(b.updatedAt) : new Date(b.createdAt);
+            return timeB - timeA;
+          });
+        }
+        const displayedTasks = col.id === 'done' ? colTasks.slice(0, visibleDoneCount) : colTasks;
         const isColCollapsed = !!collapsedColumns[col.id];
         
         return (
@@ -202,14 +235,14 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
 
                 {/* Cards Container */}
                 <div className="cards-container">
-                  {colTasks.length === 0 ? (
+                  {displayedTasks.length === 0 ? (
                     <div className="empty-state">
                       <Clock size={16} />
                       <div className="empty-state-title">Chưa có việc</div>
                       <div className="empty-state-desc">Kéo việc vào hoặc gõ để tạo việc mới.</div>
                     </div>
                   ) : (
-                    colTasks.map(task => {
+                    displayedTasks.map(task => {
                       const assignee = task.assignee;
                       const isTaskOverdue = isOverdue(task.dueDate, task.status);
                       
@@ -218,8 +251,14 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                           key={task.id}
                           id={`card-${task.id}`}
                           className={`task-card fade-in ${activePopup && activePopup.taskId === task.id ? 'active-popup' : ''}`}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, task.id)}
+                          draggable={canEditTask(task)}
+                          onDragStart={(e) => {
+                            if (!canEditTask(task)) {
+                              e.preventDefault();
+                              return;
+                            }
+                            handleDragStart(e, task.id);
+                          }}
                           onDragEnd={() => handleDragEnd(task.id)}
                           onDoubleClick={() => onOpenTaskEditor(task)}
                         >
@@ -227,7 +266,7 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                           <div className="card-header-row">
                             <div
                               className="card-title"
-                              contentEditable
+                              contentEditable={canEditTask(task)}
                               suppressContentEditableWarning
                               onBlur={(e) => handleTitleBlur(task.id, e)}
                               onKeyDown={handleTitleKeyDown}
@@ -248,16 +287,18 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                                 <Edit2 size={11} />
                               </button>
 
-                              <button
-                                className="card-delete-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteTask(task.id);
-                                }}
-                                title="Xóa công việc"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {canDeleteTask(task) && (
+                                <button
+                                  className="card-delete-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteTask(task.id);
+                                  }}
+                                  title="Xóa công việc"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -275,7 +316,10 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                             {/* Assignee Badge (Overlapping Stack) */}
                             <div 
                               className="card-badge assignee"
-                              onClick={(e) => togglePopup(task.id, 'assignee', e)}
+                              onClick={(e) => {
+                                if (!canEditTask(task)) return;
+                                togglePopup(task.id, 'assignee', e);
+                              }}
                               style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 6px' }}
                               title="Đổi người nhận"
                             >
@@ -356,7 +400,10 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                             {/* Priority Badge */}
                             <div 
                               className={`card-badge priority-${task.priority}`}
-                              onClick={(e) => togglePopup(task.id, 'priority', e)}
+                              onClick={(e) => {
+                                if (!canEditTask(task)) return;
+                                togglePopup(task.id, 'priority', e);
+                              }}
                               style={{ position: 'relative' }}
                               title="Đổi độ ưu tiên"
                             >
@@ -387,7 +434,10 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                             {/* Due Date Badge */}
                             <div 
                               className={`card-badge date ${isTaskOverdue ? 'overdue' : ''}`}
-                              onClick={(e) => togglePopup(task.id, 'date', e)}
+                              onClick={(e) => {
+                                if (!canEditTask(task)) return;
+                                togglePopup(task.id, 'date', e);
+                              }}
                               style={{ position: 'relative' }}
                               title="Đổi hạn chót"
                             >
@@ -430,6 +480,47 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                         </div>
                       );
                     })
+                  )}
+                  {col.id === 'done' && colTasks.length > visibleDoneCount && (
+                    <button
+                      className="load-more-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setVisibleDoneCount(prev => prev + 20);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px dashed rgba(255, 255, 255, 0.1)',
+                        borderRadius: '8px',
+                        color: 'var(--text-secondary)',
+                        fontSize: '12.5px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                        marginTop: '8px'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                        e.currentTarget.style.borderColor = 'var(--primary)';
+                        e.currentTarget.style.color = '#fff';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                        e.currentTarget.style.color = 'var(--text-secondary)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      <Plus size={14} style={{ color: 'var(--primary)' }} />
+                      <span>Hiển thị thêm (+20)</span>
+                    </button>
                   )}
                 </div>
               </>
