@@ -4052,7 +4052,7 @@ export default function App() {
       ) : (
         <>
           {/* Interactive NLP Smart Input Area */}
-          <section className="glass-panel" style={{ padding: isSmartInputCollapsed ? '14px 24px' : '24px', display: 'flex', flexDirection: 'column', gap: isSmartInputCollapsed ? '0px' : '14px', transition: 'all 0.3s ease' }}>
+          <section className="glass-panel" style={{ position: 'relative', zIndex: 110, padding: isSmartInputCollapsed ? '14px 24px' : '24px', display: 'flex', flexDirection: 'column', gap: isSmartInputCollapsed ? '0px' : '14px', transition: 'all 0.3s ease' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Sparkles size={16} style={{ color: '#c084fc' }} />
