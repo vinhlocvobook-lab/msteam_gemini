@@ -13,10 +13,17 @@ export default function GanttChart({ tasks, onUpdateTask, onOpenTaskEditor, team
   const [filterPriority, setFilterPriority] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterAssignees, setFilterAssignees] = useState([]);
-  const [userFilterMode, setUserFilterMode] = useState('pills'); // 'pills' | 'dropdown'
+  const [userFilterMode, setUserFilterMode] = useState(() => {
+    const saved = localStorage.getItem('synapse_gantt_user_filter_mode');
+    return saved || 'pills'; // 'pills' | 'dropdown'
+  });
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [connections, setConnections] = useState([]);
+
+  useEffect(() => {
+    localStorage.setItem('synapse_gantt_user_filter_mode', userFilterMode);
+  }, [userFilterMode]);
   
   const filteredTeamMembers = useMemo(() => {
     if (!userSearchQuery) return teamMembers;
