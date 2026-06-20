@@ -109,17 +109,40 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
     <div className="custom-calendar-popover" onClick={(e) => e.stopPropagation()}>
       <div className="calendar-popover-header">
         <span className="calendar-popover-title">Chọn hạn chót</span>
-        <button type="button" className="calendar-popover-close" onClick={onClose}>
+        <button 
+          type="button" 
+          className="calendar-popover-close" 
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onClose();
+          }}
+        >
           <X size={15} />
         </button>
       </div>
 
       <div className="calendar-navigation">
         <div className="nav-group">
-          <button type="button" className="nav-btn" onClick={prevYear} title="Năm trước">
+          <button 
+            type="button" 
+            className="nav-btn" 
+            onMouseDown={(e) => {
+              e.preventDefault();
+              prevYear();
+            }} 
+            title="Năm trước"
+          >
             <ChevronsLeft size={15} />
           </button>
-          <button type="button" className="nav-btn" onClick={prevMonth} title="Tháng trước">
+          <button 
+            type="button" 
+            className="nav-btn" 
+            onMouseDown={(e) => {
+              e.preventDefault();
+              prevMonth();
+            }} 
+            title="Tháng trước"
+          >
             <ChevronLeft size={15} />
           </button>
         </div>
@@ -127,10 +150,26 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
           Tháng {month + 1}, {year}
         </span>
         <div className="nav-group">
-          <button type="button" className="nav-btn" onClick={nextMonth} title="Tháng sau">
+          <button 
+            type="button" 
+            className="nav-btn" 
+            onMouseDown={(e) => {
+              e.preventDefault();
+              nextMonth();
+            }} 
+            title="Tháng sau"
+          >
             <ChevronRight size={15} />
           </button>
-          <button type="button" className="nav-btn" onClick={nextYear} title="Năm sau">
+          <button 
+            type="button" 
+            className="nav-btn" 
+            onMouseDown={(e) => {
+              e.preventDefault();
+              nextYear();
+            }} 
+            title="Năm sau"
+          >
             <ChevronsRight size={15} />
           </button>
         </div>
@@ -177,7 +216,10 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
               type="button"
               className={`calendar-grid-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cellIsToday ? 'today' : ''} ${cellIsWeekend ? 'weekend' : ''} ${holiday ? 'holiday' : ''}`}
               title={tooltip}
-              onClick={() => onSelectDate(cell.date)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelectDate(cell.date);
+              }}
             >
               <span className="solar-number">{cell.dayNum}</span>
               <span className="lunar-number">{lunarText}</span>
@@ -193,14 +235,18 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
         <button
           type="button"
           className="quick-today-btn"
-          onClick={() => onSelectDate(new Date())}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSelectDate(new Date());
+          }}
         >
           Hôm nay
         </button>
         <button
           type="button"
           className="quick-today-btn"
-          onClick={() => {
+          onMouseDown={(e) => {
+            e.preventDefault();
             const tomorrow = new Date();
             tomorrow.setDate(today.getDate() + 1);
             onSelectDate(tomorrow);
