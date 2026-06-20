@@ -122,11 +122,12 @@ Cung cấp cơ chế nhận webhook từ MS Graph (`/api/webhooks/teams`) hoặc
 
 ## 4. Luồng Xử Lý Phía Frontend (Frontend Flows)
 
-### 4.1. Khởi Tạo & Polling Lặp - [App.jsx](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/frontend/src/App.jsx)
-- Khi user đăng nhập thành công (`isLoggedIn` đổi trạng thái), một React `useEffect` sẽ kích hoạt:
-  1. Sử dụng `AbortController` để quản lý việc gọi API bất đồng bộ và tránh rò rỉ bộ nhớ khi component bị unmount.
-  2. Gọi hàm `fetchNotifications` ngay lập tức để tải danh sách.
-  3. Khởi tạo một vòng lặp `setInterval` để định kỳ tải lại thông báo mỗi **30 giây** (`30000ms`).
+### 4.1. Khởi Tạo & Kết Nối Socket.io - [App.jsx](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/frontend/src/App.jsx)
+- Khi user đăng nhập thành công (`isLoggedIn === true`), một React `useEffect` sẽ kích hoạt:
+  1. Sử dụng `AbortController` để tải danh sách thông báo ban đầu qua REST API nhằm đồng bộ các thông báo khi offline.
+  2. Khởi tạo kết nối Socket.io client, truyền Access Token JWT của người dùng qua cấu hình `auth: { token }` để xác thực.
+  3. Lắng nghe sự kiện `notification` thời gian thực từ socket. Khi nhận được thông báo mới, hệ thống tự động đẩy thêm vào đầu danh sách state `notifications` và kích hoạt Premium Toast Alert trên màn hình.
+  4. Khi component unmount hoặc user đăng xuất, thực hiện đóng kết nối socket để giải phóng tài nguyên.
 
 ### 4.2. Quản Lý Trạng Thái UI
 - Danh sách thông báo được lưu tại state `notifications`.
@@ -136,9 +137,32 @@ Cung cấp cơ chế nhận webhook từ MS Graph (`/api/webhooks/teams`) hoặc
   - **Đọc tất cả (`handleMarkAllNotificationsAsRead`)**: Gọi API `/api/notifications/read-all` và chuyển toàn bộ `is_read = 1` ở giao diện.
   - **Xóa thông báo (`handleDeleteNotification`)**: Gọi API xóa `/api/notifications/:id` và loại bỏ khỏi giao diện.
 
+### 4.3. Thông Báo Hệ Thống Trình Duyệt (Web Notification API)
+- Cung cấp cấu hình bật/tắt (Toggle) và lưu lựa chọn vào `localStorage`.
+- Khi nhận thông báo thời gian thực qua socket, nếu người dùng đang ở tab khác hoặc ứng dụng khác (`document.hidden || !document.hasFocus()`), hệ thống sẽ phát một Native OS-level Desktop Notification.
+- Khi người dùng nhấp vào thông báo đẩy, trình duyệt sẽ tự động kích hoạt tập trung (`window.focus()`) và mở chi tiết công việc.
+- Cung cấp nút kiểm thử **🚀 Gửi Test (3s)** để mô phỏng và kiểm tra nhanh hành vi thông báo đẩy của hệ điều hành.
+
 ---
 
 > - **Khắc phục**: Đã thay thế `{notif.message}` thành `{notif.content}` tại [App.jsx](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/frontend/src/App.jsx). Hiện tại, nội dung của các thông báo nhắc nhở và quá hạn đã hiển thị đầy đủ và chính xác trên giao diện người dùng.
+
+---
+
+## 5. Tài Khoản Gửi Tin Nhắn Trên Microsoft Teams (Microsoft Teams Sender Accounts)
+
+Hệ thống sử dụng các tài khoản Microsoft để gửi thông báo trên Teams tùy theo từng trường hợp cụ thể:
+1. **Hành động thời gian thực của người dùng (Thêm bình luận, đổi trạng thái, gán người...)**:
+   - Sử dụng tài khoản Microsoft của **chính người dùng đang thao tác** (`activeUser`).
+   - Cụ thể: Khi gửi tin nhắn Teams hay Direct Message (DM), hệ thống dùng ID của người thao tác để lấy Access Token của họ thông qua hàm `getValidMicrosoftToken(userId)`.
+2. **Tiến trình quét nền tự động nhắc nhở (Scheduler - Sắp đến hạn / Quá hạn)**:
+   - Sử dụng tài khoản Microsoft của **người tạo công việc** (`task.creator_id`).
+   - Cụ thể: Khi Scheduler quét và phát thông báo nhắc nhở đến các kênh (channel) hoặc chat Teams liên kết với công việc, hệ thống sử dụng Access Token của người tạo công việc này.
+3. **Bản tin chào buổi sáng AI hàng ngày (Daily Morning Digest)**:
+   - Bản tin này được gửi dưới dạng tin nhắn riêng tư (DM) 1:1 cho từng người nhận. Do Microsoft Graph API không hỗ trợ tự gửi tin nhắn DM cho chính mình, hệ thống sẽ thực hiện truy vấn cơ sở dữ liệu để tìm **một tài khoản người dùng khác** có Microsoft Token đang hoạt động:
+     - Hệ thống ưu tiên chọn tài khoản có vai trò là **Admin**.
+     - Nếu không tìm thấy Admin nào có token khả dụng, hệ thống sẽ lấy tài khoản của **bất kỳ người dùng nào khác** có Microsoft Token đang hoạt động.
+     - Sau khi tìm được, hệ thống sẽ mượn Access Token của tài khoản này để gửi tin nhắn DM đến tài khoản của người nhận.
 
 ---
 
@@ -146,36 +170,15 @@ Cung cấp cơ chế nhận webhook từ MS Graph (`/api/webhooks/teams`) hoặc
 
 Dưới đây là các phân tích và đề xuất cải tiến hệ thống thông báo nhằm nâng cao hiệu năng, độ tin cậy và trải nghiệm người dùng (UX):
 
-### 6.1. Hạn Chế Của Hệ Thống Hiện Tại
-1. **Thiếu thông báo In-App cho các hành động thời gian thực**:
-   - Khi có người gán việc (`add_assignee`), đổi quyền (`permission`), hay viết bình luận (`add_comment`), hệ thống chỉ phát đi tin nhắn Teams. Nếu một thành viên không liên kết tài khoản Teams hoặc Teams bị lỗi token, họ sẽ **hoàn toàn bỏ lỡ** các thông báo quan trọng này vì hệ thống không lưu chúng vào bảng `notifications` trong cơ sở dữ liệu.
-2. **Hiệu năng Polling (Thăm dò định kỳ)**:
-   - Frontend đang gọi API `/api/notifications` mỗi 30 giây. Khi số lượng người dùng đồng thời tăng lên hoặc khi mở nhiều tab trình duyệt, việc này tạo ra lượng request rác khổng lồ lên cơ sở dữ liệu MySQL, gây lãng phí tài nguyên và làm chậm phản hồi.
-3. **Thiếu cơ chế hàng đợi (Queue) khi gửi thông báo Teams**:
+### 6.1. Hạn Chế Đã Khắc Phục (Implemented Features)
+1. **Thông báo In-App cho các hành động thời gian thực**: Đã tích hợp lưu database cho tất cả các sự kiện thay đổi công việc thực tế, đảm bảo người dùng không bỏ lỡ thông báo dù có dùng Teams hay không.
+2. **Chuyển từ Polling sang WebSockets**: Đã thay thế cơ chế gọi API 30s một lần bằng Socket.io thời gian thực, giảm thiểu truy vấn rác lên MySQL và tăng tốc độ cập nhật.
+3. **Thông báo đẩy ngoài ứng dụng**: Đã hỗ trợ HTML5 Web Notification để đẩy thông báo lên mức hệ điều hành khi người dùng đang ở tab/ứng dụng khác.
+
+### 6.2. Hạn Chế Hiện Tại & Hướng Phát Triển Tiếp Theo
+1. **Thiếu cơ chế hàng đợi (Queue) khi gửi thông báo Teams**:
    - Các hành động gửi tin nhắn Teams hiện đang chạy đồng bộ/bất đồng bộ trực tiếp (qua `axios.post` với Graph API) kèm theo `delay(500)` thủ công. Nếu Microsoft Graph API gặp sự cố tạm thời, phản hồi chậm, hoặc quá hạn định mức (Rate Limit 429 quá lâu), hệ thống có thể bị nghẽn luồng xử lý hoặc mất tin nhắn mà không có cơ chế lưu vết để gửi lại.
-4. **Không có Cấu hình/Bộ lọc Thông báo (Notification Preferences)**:
-   - Người dùng không có quyền lựa chọn tắt/mở các loại thông báo (Ví dụ: Không muốn nhận Bản tin sáng AI, chỉ muốn nhận thông báo quá hạn, chỉ muốn nhận Teams DM mà không nhận in-app).
-5. **Cơ chế lập lịch Daily Digest bằng `setInterval`**:
-   - Hàm kiểm tra 8:00 AM được đặt trong vòng lặp 60 giây. Nếu server bị khởi động lại hoặc tạm ngưng đúng vào khung giờ 8:00 - 8:01 AM, bản tin chào buổi sáng AI của ngày đó sẽ bị bỏ lỡ hoàn toàn. Ngoài ra, việc gửi bản tin đang cố định theo múi giờ server thay vì múi giờ thực tế của từng nhân viên.
-
----
-
-### 6.2. Đề Xuất Giải Pháp Nâng Cấp
-
-#### 🚀 Giải Pháp Ngắn Hạn (Dễ Triển Khai)
-1. **Đồng bộ hóa In-App & Teams**:
-   - Bổ sung logic ghi nhận vào bảng `notifications` cho các sự kiện thời gian thực trong hàm `triggerTeamsNotifications()` tại [tasks.js](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/backend/routes/tasks.js).
-   - Đảm bảo rằng dù người dùng có dùng Teams hay không, họ vẫn nhìn thấy quả chuông thông báo nhảy số trên web khi được gán việc hay có bình luận mới.
-2. **Sử dụng thư viện Cron chuyên dụng**:
-   - Thay thế cơ chế lập lịch tự chế trong `scheduler.js` bằng thư viện chuẩn như `node-cron` hoặc `agenda`. Điều này giúp kiểm soát giờ gửi chính xác hơn và hỗ trợ cấu hình múi giờ (timezone) động theo từng User.
-
-#### 🚀 Giải Pháp Dài Hạn (Kiến Trúc Bền Vững)
-1. **Chuyển từ Polling sang WebSockets / Server-Sent Events (SSE)**:
-   - Sử dụng **Socket.io** để đẩy thông báo thời gian thực từ Backend xuống Frontend ngay khi có bản ghi thông báo mới được thêm vào database.
-   - Giảm tải 100% request polling tĩnh, nâng cao trải nghiệm ứng dụng thời gian thực (Real-time).
-2. **Áp dụng Hàng Đợi Tin Nhắn (Message Queue - Ví dụ: BullMQ + Redis)**:
-   - Đưa toàn bộ tác vụ liên quan đến bên thứ ba (như gửi Microsoft Graph API, gọi API LLM tạo bản tin sáng) vào hàng đợi chạy ngầm (Background Job Queue).
-   - Tự động thử lại (Retry with exponential backoff) nếu Graph API bị lỗi kết nối hoặc rate-limited (429), đảm bảo không bao giờ làm mất thông báo của người dùng.
-3. **Xây dựng Bảng Cấu Hình Thông Báo (Notification Settings UI)**:
-   - Thêm bảng `user_notification_settings` lưu cấu hình nhận thông báo của từng thành viên.
-   - Thêm giao diện quản lý ở góc người dùng để bật/tắt nhận tin qua các kênh (In-app, Teams Chat, Teams Channel) tương ứng với từng loại sự kiện (Quá hạn, Bình luận, Phân việc).
+2. **Không có Cấu hình/Bộ lọc Thông báo (Notification Preferences)**:
+   - Người dùng chưa có quyền lựa chọn bật/tắt riêng từng loại thông báo chi tiết trên Web (Ví dụ: Không muốn nhận Bản tin sáng AI, chỉ muốn nhận thông báo quá hạn, v.v.).
+3. **Cơ chế lập lịch Daily Digest bằng `setInterval`**:
+   - Hàm kiểm tra 8:00 AM được đặt trong vòng lặp 60 giây. Nếu server bị khởi động lại hoặc tạm ngưng đúng vào khung giờ 8:01 AM, bản tin chào buổi sáng AI của ngày đó có thể bị bỏ lỡ. Có thể cải tiến bằng thư viện `node-cron` hoặc `agenda`.
