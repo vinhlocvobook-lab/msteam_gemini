@@ -126,7 +126,7 @@ async function processWebhookNotification(subscriptionId, resource, resourceData
 // ───────────────────────────────────────────────
 // 2. DELTA QUERY POLLING ENDPOINT
 // ───────────────────────────────────────────────
-router.post('/sync/poll-teams', async (req, res) => {
+router.post('/sync/poll-teams', authenticateAppToken, async (req, res) => {
   const { taskId } = req.body;
 
   try {
@@ -535,7 +535,7 @@ router.post('/sync/trigger-daily-digest', authenticateAppToken, async (req, res)
 // ───────────────────────────────────────────────
 // 4. SIMULATION ENDPOINT (FOR TESTING)
 // ───────────────────────────────────────────────
-router.post('/simulator/teams-sync', async (req, res) => {
+router.post('/simulator/teams-sync', authenticateAppToken, async (req, res) => {
   const { taskId, messageText, senderName = 'Lộc Võ (Mock)' } = req.body;
 
   if (!taskId || !messageText) {

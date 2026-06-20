@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../db.js';
-import { authenticateAppToken } from '../auth.js';
+import { authenticateAppToken, authorize } from '../auth.js';
 
 const router = express.Router();
 
@@ -31,7 +31,7 @@ router.get('/settings', authenticateAppToken, async (req, res) => {
 });
 
 // POST /api/calendar/weekends
-router.post('/weekends', authenticateAppToken, async (req, res) => {
+router.post('/weekends', authenticateAppToken, authorize(['Admin']), async (req, res) => {
   const { weekendDays } = req.body; // Array of numbers e.g. [0, 6]
   if (!Array.isArray(weekendDays)) {
     return res.status(400).json({ error: 'Dữ liệu ngày cuối tuần không hợp lệ.' });
@@ -65,7 +65,7 @@ router.post('/weekends', authenticateAppToken, async (req, res) => {
 });
 
 // POST /api/calendar/holidays
-router.post('/holidays', authenticateAppToken, async (req, res) => {
+router.post('/holidays', authenticateAppToken, authorize(['Admin']), async (req, res) => {
   const { name, type, month, day, dateStr, color } = req.body;
   if (!name || !type) {
     return res.status(400).json({ error: 'Tên và loại ngày lễ là bắt buộc.' });
@@ -107,7 +107,7 @@ router.post('/holidays', authenticateAppToken, async (req, res) => {
 });
 
 // DELETE /api/calendar/holidays/:id
-router.delete('/holidays/:id', authenticateAppToken, async (req, res) => {
+router.delete('/holidays/:id', authenticateAppToken, authorize(['Admin']), async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM calendar_holidays WHERE id = ?', [id]);

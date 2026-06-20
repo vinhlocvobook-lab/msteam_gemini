@@ -1166,7 +1166,7 @@ router.delete('/:id', authenticateAppToken, authorizeTask('delete'), async (req,
 // ───────────────────────────────────────────────
 // API: Khôi phục công việc đã xóa (Undo Soft Delete)
 // ───────────────────────────────────────────────
-router.post('/:id/restore', authenticateAppToken, async (req, res) => {
+router.post('/:id/restore', authenticateAppToken, authorizeTask('delete'), async (req, res) => {
   const taskId = req.params.id;
 
   try {
@@ -1216,7 +1216,7 @@ router.get('/:id/activities', authenticateAppToken, authorizeTask('view'), async
 // ───────────────────────────────────────────────
 // API: Thêm bình luận thảo luận
 // ───────────────────────────────────────────────
-router.post('/:id/comments', authenticateAppToken, async (req, res) => {
+router.post('/:id/comments', authenticateAppToken, authorizeTask('view'), async (req, res) => {
   const taskId = req.params.id;
   const { content } = req.body;
 
