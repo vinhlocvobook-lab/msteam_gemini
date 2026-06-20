@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, AlertTriangle, User, Clock, CheckCircle2, MoreHorizontal, Link as LinkIcon, Plus, Eye, Sparkles } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, AlertTriangle, User, Clock, CheckCircle2, MoreHorizontal, Link as LinkIcon, Plus, Eye, Sparkles, ChevronDown } from 'lucide-react';
 
 const ZOOM_LEVELS = [
   { id: 'day', label: 'Ngày', colWidth: 100, labelFormat: 'DD/MM' },
@@ -13,8 +13,21 @@ export default function GanttChart({ tasks, onUpdateTask, onOpenTaskEditor, team
   const [filterPriority, setFilterPriority] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterAssignees, setFilterAssignees] = useState([]);
+  const [userFilterMode, setUserFilterMode] = useState('pills'); // 'pills' | 'dropdown'
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
   const [connections, setConnections] = useState([]);
   
+  const filteredTeamMembers = useMemo(() => {
+    if (!userSearchQuery) return teamMembers;
+    const q = userSearchQuery.toLowerCase();
+    return teamMembers.filter(member => 
+      member.name.toLowerCase().includes(q) || 
+      (member.role && member.role.toLowerCase().includes(q)) ||
+      (member.username && member.username.toLowerCase().includes(q))
+    );
+  }, [teamMembers, userSearchQuery]);
+
   const timelineRef = useRef(null);
   const containerRef = useRef(null);
   
@@ -293,87 +306,344 @@ export default function GanttChart({ tasks, onUpdateTask, onOpenTaskEditor, team
             <option value="done">Hoàn thành</option>
           </select>
 
-          {/* Assignee multi-choice filter pills */}
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '20px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginRight: '4px', flexShrink: 0 }}>Giao cho:</span>
-            <div 
-              className="no-scrollbar"
-              style={{ 
-                display: 'flex', 
-                gap: '6px', 
-                overflowX: 'auto', 
-                maxWidth: '240px', 
-                padding: '2px 0', 
-                scrollbarWidth: 'none', 
-                msOverflowStyle: 'none' 
+          {/* User Filter Mode Switcher (Segmented Control) */}
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', padding: '2px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setUserFilterMode('pills');
+                setIsUserDropdownOpen(false);
               }}
+              style={{
+                padding: '5px 10px',
+                borderRadius: '6px',
+                border: 'none',
+                background: userFilterMode === 'pills' ? 'var(--primary)' : 'transparent',
+                color: userFilterMode === 'pills' ? 'white' : 'var(--text-secondary)',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+              title="Lọc nhanh bằng danh sách Avatar"
             >
-              {teamMembers.map(member => {
-                const isActive = filterAssignees.includes(member.id);
-                return (
-                  <button
-                    key={member.id}
-                    type="button"
-                    onClick={() => {
-                      setFilterAssignees(prev =>
-                        isActive ? prev.filter(id => id !== member.id) : [...prev, member.id]
-                      );
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: 0,
-                      borderRadius: '50%',
-                      position: 'relative',
-                      transition: 'all 0.2s ease',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title={`Lọc theo ${member.name}`}
-                  >
-                    <img
-                      src={member.avatar}
-                      alt={member.name}
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        objectFit: 'cover',
-                        border: isActive ? `2px solid var(--primary)` : '2px solid transparent',
-                        boxShadow: isActive ? '0 0 8px var(--primary-glow)' : 'none',
-                        transition: 'all 0.2s ease',
-                        opacity: isActive ? 1 : 0.4
+              <User size={12} />
+              <span>Nhanh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUserFilterMode('dropdown');
+              }}
+              style={{
+                padding: '5px 10px',
+                borderRadius: '6px',
+                border: 'none',
+                background: userFilterMode === 'dropdown' ? 'var(--primary)' : 'transparent',
+                color: userFilterMode === 'dropdown' ? 'white' : 'var(--text-secondary)',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+              title="Lọc chi tiết bằng Dropdown checklist"
+            >
+              <ChevronDown size={12} />
+              <span>Chi tiết</span>
+            </button>
+          </div>
+
+          {/* User Filter Mode: Pills or Dropdown */}
+          {userFilterMode === 'pills' ? (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '20px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginRight: '4px', flexShrink: 0 }}>Giao cho:</span>
+              <div 
+                className="no-scrollbar"
+                style={{ 
+                  display: 'flex', 
+                  gap: '6px', 
+                  overflowX: 'auto', 
+                  maxWidth: '240px', 
+                  padding: '2px 0', 
+                  scrollbarWidth: 'none', 
+                  msOverflowStyle: 'none' 
+                }}
+              >
+                {teamMembers.map(member => {
+                  const isActive = filterAssignees.includes(member.id);
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => {
+                        setFilterAssignees(prev =>
+                          isActive ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                        );
                       }}
-                    />
-                  </button>
-                );
-              })}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        borderRadius: '50%',
+                        position: 'relative',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      title={`Lọc theo ${member.name} (${member.role || 'Thành viên'})`}
+                    >
+                      <img
+                        src={member.avatar}
+                        alt={member.name}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          objectFit: 'cover',
+                          border: isActive ? `2px solid var(--primary)` : '2px solid transparent',
+                          boxShadow: isActive ? '0 0 8px var(--primary-glow)' : 'none',
+                          transition: 'all 0.2s ease',
+                          opacity: isActive ? 1 : 0.4
+                        }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+              {filterAssignees.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterAssignees([])}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#f43f5e',
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    marginLeft: '8px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                >
+                  Xóa
+                </button>
+              )}
             </div>
-            {filterAssignees.length > 0 && (
+          ) : (
+            <div style={{ position: 'relative' }}>
               <button
                 type="button"
-                onClick={() => setFilterAssignees([])}
+                onClick={() => {
+                  setIsUserDropdownOpen(!isUserDropdownOpen);
+                  setUserSearchQuery('');
+                }}
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#f43f5e',
-                  fontSize: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  color: 'white',
+                  fontSize: '11px',
                   fontWeight: '600',
                   cursor: 'pointer',
-                  marginLeft: '8px',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
+                  outline: 'none',
                   transition: 'all 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
               >
-                Xóa lọc
+                <User size={12} style={{ color: '#c084fc' }} />
+                <span>
+                  {filterAssignees.length === 0 ? 'Mọi người thực hiện' : `Đã chọn (${filterAssignees.length})`}
+                </span>
+                <ChevronDown size={10} style={{ opacity: 0.6 }} />
               </button>
-            )}
-          </div>
+
+              {isUserDropdownOpen && (
+                <>
+                  <div 
+                    onClick={() => {
+                      setIsUserDropdownOpen(false);
+                      setUserSearchQuery('');
+                    }} 
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} 
+                  />
+                  <div 
+                    className="glass-panel custom-scrollbar"
+                    style={{
+                      position: 'absolute',
+                      top: '32px',
+                      left: 0,
+                      width: '290px',
+                      maxHeight: '340px',
+                      overflowY: 'auto',
+                      zIndex: 999,
+                      padding: '12px',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      animation: 'fadeIn 0.15s ease'
+                    }}
+                  >
+                    {/* Search box inside dropdown */}
+                    <input
+                      type="text"
+                      placeholder="Tìm thành viên..."
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        fontSize: '11px',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        marginBottom: '6px',
+                        transition: 'border-color 0.2s'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                      onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
+                    />
+
+                    {/* Actions and Status Bar */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '6px' }}>
+                      <span>Thành viên ({filteredTeamMembers.length})</span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const visibleIds = filteredTeamMembers.map(m => m.id);
+                            setFilterAssignees(prev => {
+                              const next = [...prev];
+                              visibleIds.forEach(id => {
+                                if (!next.includes(id)) next.push(id);
+                              });
+                              return next;
+                            });
+                          }} 
+                          style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: '9px', fontWeight: '600', cursor: 'pointer', outline: 'none' }}
+                        >
+                          Chọn hết
+                        </button>
+                        <span style={{ color: 'rgba(255,255,255,0.1)' }}>|</span>
+                        <button 
+                          type="button"
+                          onClick={() => setFilterAssignees([])} 
+                          style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: '9px', fontWeight: '600', cursor: 'pointer', outline: 'none' }}
+                        >
+                          Bỏ chọn
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Members checklist container */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto', maxHeight: '200px' }} className="custom-scrollbar">
+                      {filteredTeamMembers.length === 0 ? (
+                        <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px', fontStyle: 'italic' }}>
+                          Không tìm thấy thành viên.
+                        </div>
+                      ) : (
+                        filteredTeamMembers.map(member => {
+                          const isChecked = filterAssignees.includes(member.id);
+                          const isOnline = member.status !== 'offline';
+                          const isTyping = member.status === 'typing';
+
+                          return (
+                            <label 
+                              key={member.id} 
+                              style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '10px', 
+                                padding: '6px 8px', 
+                                borderRadius: '8px', 
+                                cursor: 'pointer',
+                                background: isChecked ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                                transition: 'background 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isChecked) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isChecked) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setFilterAssignees(prev =>
+                                    isChecked ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                                  );
+                                }}
+                                style={{ accentColor: '#8b5cf6', cursor: 'pointer' }}
+                              />
+
+                              {/* Avatar with Status indicator */}
+                              <div style={{ position: 'relative', width: '22px', height: '22px', flexShrink: 0 }}>
+                                <img 
+                                  src={member.avatar} 
+                                  alt={member.name} 
+                                  style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} 
+                                />
+                                <span 
+                                  className={`status-indicator ${isTyping ? 'typing' : isOnline ? 'online' : ''}`}
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: '-1px',
+                                    right: '-1px',
+                                    border: '1.5px solid #121214',
+                                    width: '8px',
+                                    height: '8px'
+                                  }}
+                                />
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {member.name}
+                                  </span>
+                                  {member.username && (
+                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                                      @{member.username}
+                                    </span>
+                                  )}
+                                </div>
+                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {member.role || 'Thành viên'}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)' }} />
 
