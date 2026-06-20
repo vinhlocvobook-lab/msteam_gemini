@@ -67,9 +67,16 @@ export default function SmartInput({
   };
 
   const handleCustomDateSelect = (selectedDate) => {
+    const today = new Date();
+    const dYear = selectedDate.getFullYear();
     const dMonth = selectedDate.getMonth() + 1;
     const dDay = selectedDate.getDate();
-    const formattedDate = `${String(dDay).padStart(2, '0')}/${String(dMonth).padStart(2, '0')}`;
+    
+    let formattedDate = `${String(dDay).padStart(2, '0')}/${String(dMonth).padStart(2, '0')}`;
+    if (dYear !== today.getFullYear()) {
+      formattedDate += `/${dYear}`;
+    }
+    
     insertSuggestion(formattedDate);
     setShowCustomCalendar(false);
   };

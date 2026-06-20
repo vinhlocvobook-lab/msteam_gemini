@@ -33,6 +33,12 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
       date.getFullYear() === today.getFullYear();
   };
 
+  const isDateInPast = (date) => {
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const compareDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return compareDate < todayStart;
+  };
+
   const isWeekend = (date) => {
     return weekendDays.includes(date.getDay());
   };
@@ -187,6 +193,7 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
         {dayCells.map((cell, idx) => {
           const cellIsToday = isToday(cell.date);
           const cellIsWeekend = isWeekend(cell.date);
+          const cellIsPast = isDateInPast(cell.date);
           const holiday = getHoliday(cell.date);
           
           let lunarText = '';
@@ -204,8 +211,11 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
               ? `${lunar.lDay}/${lunar.lMonth}${lunar.isLeap ? 'n' : ''}`
               : lunar.lDay.toString();
             
-            tooltip = `Dương lịch: ${cell.date.toLocaleDateString('vi-VN')}\nÂm lịch: Ngày ${lunar.lDay} tháng ${lunar.lMonth}${lunar.isLeap ? ' (Nhuận)' : ''}, năm ${lunar.lYear}`;
-            if (holiday) {
+            tooltip = cellIsPast 
+              ? 'Không thể chọn ngày trong quá khứ'
+              : `Dương lịch: ${cell.date.toLocaleDateString('vi-VN')}\nÂm lịch: Ngày ${lunar.lDay} tháng ${lunar.lMonth}${lunar.isLeap ? ' (Nhuận)' : ''}, năm ${lunar.lYear}`;
+            
+            if (holiday && !cellIsPast) {
               tooltip += `\nNgày lễ: ${holiday.name}`;
             }
           } catch (e) {}
@@ -214,16 +224,18 @@ export default function CustomCalendar({ holidays = [], weekendDays = [0, 6], on
             <button
               key={idx}
               type="button"
-              className={`calendar-grid-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cellIsToday ? 'today' : ''} ${cellIsWeekend ? 'weekend' : ''} ${holiday ? 'holiday' : ''}`}
+              className={`calendar-grid-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cellIsToday ? 'today' : ''} ${cellIsWeekend ? 'weekend' : ''} ${holiday ? 'holiday' : ''} ${cellIsPast ? 'past-date' : ''}`}
               title={tooltip}
+              disabled={cellIsPast}
               onMouseDown={(e) => {
+                if (cellIsPast) return;
                 e.preventDefault();
                 onSelectDate(cell.date);
               }}
             >
               <span className="solar-number">{cell.dayNum}</span>
               <span className="lunar-number">{lunarText}</span>
-              {holiday && (
+              {holiday && !cellIsPast && (
                 <span className="holiday-dot" style={{ backgroundColor: holiday.color || '#ef4444' }} />
               )}
             </button>

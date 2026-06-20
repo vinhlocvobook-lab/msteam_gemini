@@ -788,6 +788,15 @@ body {
   opacity: 0.3;
 }
 
+.calendar-grid-cell:disabled,
+.calendar-grid-cell.past-date {
+  opacity: 0.12 !important;
+  cursor: not-allowed !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  pointer-events: none;
+}
+
 .calendar-grid-cell.today {
   border-color: var(--primary) !important;
   background: rgba(99, 102, 241, 0.15) !important;

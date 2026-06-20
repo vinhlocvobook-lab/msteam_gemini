@@ -151,22 +151,33 @@ export function parseTaskText(text, usersList = USERS) {
     }
   }
 
-  // Check for absolute dates like dd/mm or dd-mm
+  // Check for absolute dates like dd/mm/yyyy, dd-mm-yyyy, dd/mm, or dd-mm
   if (!matchedDate) {
-    const dateRegex = /\b(\d{1,2})[\/\-](\d{1,2})\b/;
-    const match = text.match(dateRegex);
-    if (match) {
-      const day = parseInt(match[1]);
-      const month = parseInt(match[2]) - 1; // 0-indexed
-      const year = today.getFullYear();
-      
+    const dateYearRegex = /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/;
+    const yearMatch = text.match(dateYearRegex);
+    if (yearMatch) {
+      const day = parseInt(yearMatch[1]);
+      const month = parseInt(yearMatch[2]) - 1;
+      const year = parseInt(yearMatch[3]);
       const targetDate = new Date(year, month, day, 17, 0, 0, 0);
-      // If date already passed in this year, assume next year
-      if (targetDate < today && (today.getTime() - targetDate.getTime() > 24*3600*1000)) {
-        targetDate.setFullYear(year + 1);
-      }
       matchedDate = targetDate;
-      rawDateText = match[0];
+      rawDateText = yearMatch[0];
+    } else {
+      const dateRegex = /\b(\d{1,2})[\/\-](\d{1,2})\b/;
+      const match = text.match(dateRegex);
+      if (match) {
+        const day = parseInt(match[1]);
+        const month = parseInt(match[2]) - 1; // 0-indexed
+        const year = today.getFullYear();
+        
+        const targetDate = new Date(year, month, day, 17, 0, 0, 0);
+        // If date already passed in this year, assume next year
+        if (targetDate < today && (today.getTime() - targetDate.getTime() > 24*3600*1000)) {
+          targetDate.setFullYear(year + 1);
+        }
+        matchedDate = targetDate;
+        rawDateText = match[0];
+      }
     }
   }
 
