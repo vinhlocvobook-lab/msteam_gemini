@@ -4077,7 +4077,12 @@ export default function App() {
 
             {!isSmartInputCollapsed && (
               <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <SmartInput onAddTask={handleAddTask} activeUser={activeUser} />
+                <SmartInput 
+                  onAddTask={handleAddTask} 
+                  activeUser={activeUser} 
+                  teamMembers={teamMembers}
+                  existingTags={Array.from(new Set(tasks.flatMap(t => t.tags || [])))}
+                />
               </div>
             )}
           </section>

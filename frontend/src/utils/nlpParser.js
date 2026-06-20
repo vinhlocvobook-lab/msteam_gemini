@@ -33,7 +33,7 @@ function removeVietnameseTones(str) {
   return str.toLowerCase();
 }
 
-export function parseTaskText(text) {
+export function parseTaskText(text, usersList = USERS) {
   if (!text) {
     return {
       cleanText: '',
@@ -207,7 +207,7 @@ export function parseTaskText(text) {
     // Check if word is assignee
     if (trimmedWord.startsWith('@')) {
       const username = lowerWord.substring(1);
-      const matchedUser = USERS.find(u => u.username === username);
+      const matchedUser = usersList.find(u => u.username.toLowerCase() === username);
       if (matchedUser) {
         assignee = matchedUser;
         tokens.push({ type: 'assignee', text: word, value: matchedUser });

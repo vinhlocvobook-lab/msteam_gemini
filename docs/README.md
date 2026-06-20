@@ -15,7 +15,9 @@ tasks_management_gemini/
 ├── docs/                             # Project Handover Documentation
 │   ├── README.md                     # [This File] Main Handover & Quick Start
 │   ├── ARCHITECTURE.md               # Architecture, Component Architecture & Engines
-│   └── DEVELOPMENT_GUIDE.md          # Extension Guide for Teams and AI LLMs
+│   ├── DEVELOPMENT_GUIDE.md          # Extension Guide for Teams and AI LLMs
+│   └── user_guide/                   # User Guides
+│       └── create_task.md            # Detailed Task Creation Guide (Vietnamese)
 ├── src/
 │   ├── components/                   # React Functional Components
 │   │   ├── KanbanBoard.jsx           # Interactive Kanban Board (Drag & Drop, Inline Edits)
@@ -106,3 +108,4 @@ We follow standard Git Flow best practices to ensure repository health:
 To deep dive into the code mechanics, proceed to the following guides:
 1.  👉 **[Architecture Guide (docs/ARCHITECTURE.md)](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/docs/ARCHITECTURE.md)**: Details the inner workings of components, NLP engines, simulator loops, and local storage schemas.
 2.  👉 **[Development & Extension Guide (docs/DEVELOPMENT_GUIDE.md)](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/docs/DEVELOPMENT_GUIDE.md)**: Provides copy-paste templates and instructions for adding columns, extending NLP tokens, or creating new components.
+3.  👉 **[Task Creation User Guide (docs/user_guide/create_task.md)](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/docs/user_guide/create_task.md)**: Detailed manual for end users on creating and managing tasks using NLP Smart Input and detailed editors.
