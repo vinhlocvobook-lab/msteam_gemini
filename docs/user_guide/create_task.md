@@ -88,7 +88,7 @@ Bạn có thể nhập thời hạn bằng nhiều cách linh hoạt:
 
 *   **Gợi ý Thành viên (`@`)**: Khi gõ ký tự `@`, danh sách thành viên sẽ xuất hiện. Bạn có thể tiếp tục gõ để lọc nhanh theo tên hoặc username (ví dụ: `@l` để tìm Lan hoặc Lộc).
 *   **Gợi ý Độ ưu tiên & Nhãn dán (`#`)**: Khi gõ ký tự `#`, hệ thống sẽ liệt kê các mức độ ưu tiên (`#cao`, `#vua`, `#thap`) và danh sách các nhãn dán đã từng được sử dụng. Nếu bạn muốn gõ một nhãn mới chưa từng có, hệ thống sẽ đề xuất **"Tạo nhãn mới: #tên_nhãn"**.
-*   **Gợi ý Thời hạn (`//`)**: Khi gõ hai ký tự `//`, danh sách các phím tắt thời gian thông minh (Hôm nay, Ngày mai, Ngày kia, Tuần sau, Thứ hai tới...) sẽ hiện ra cùng với **ngày tháng cụ thể tương ứng** trong ngoặc đơn. Đồng thời, có thêm tùy chọn **"Chọn từ lịch..."** giúp bạn mở trực tiếp bảng lịch chọn ngày tùy chỉnh của hệ thống để chọn chính xác ngày mong muốn. Ngày được chọn sẽ tự động điền vào ô nhập liệu dưới dạng `dd/mm` (ví dụ `25/06`).
+*   **Gợi ý Thời hạn (`//`)**: Khi gõ hai ký tự `//`, danh sách các phím tắt thời gian thông minh (Hôm nay, Ngày mai, Ngày kia, Tuần sau, Thứ hai tới...) sẽ hiện ra cùng với **ngày tháng cụ thể tương ứng** trong ngoặc đơn. Đồng thời, có thêm tùy chọn **"Chọn từ lịch..."** giúp hiển thị bảng lịch Glassmorphism tùy chỉnh trực quan. Bảng lịch này hiển thị song song **Dương lịch** và **Âm lịch** (màu vàng), tự động làm nổi bật các **ngày nghỉ cuối tuần** (màu đỏ) và các **ngày nghỉ lễ** của hệ thống (nền đỏ/hồng nhạt, hiển thị tooltip tên ngày lễ khi rê chuột qua), giúp bạn dễ dàng chọn chính xác ngày hạn chót mong muốn. Ngày được chọn sẽ tự động điền vào ô nhập liệu dưới dạng `dd/mm` (ví dụ `25/06`).
 
 ---
 

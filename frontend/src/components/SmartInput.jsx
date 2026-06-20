@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, CornerDownLeft, User, Calendar, AlertTriangle, Hash, ShieldAlert, Tag, Plus, Check, CalendarPlus } from 'lucide-react';
 import { parseTaskText, USERS, PRIORITIES } from '../utils/nlpParser';
+import CustomCalendar from './CustomCalendar';
 
 const SLASH_COMMANDS = [
   { id: 'assign', title: '/assign', desc: 'Gán nhanh người nhận việc', param: '@' },
@@ -39,7 +40,14 @@ const getActiveToken = (text, cursorPosition) => {
   return null;
 };
 
-export default function SmartInput({ onAddTask, activeUser, teamMembers = USERS, existingTags = [] }) {
+export default function SmartInput({ 
+  onAddTask, 
+  activeUser, 
+  teamMembers = USERS, 
+  existingTags = [],
+  holidays = [],
+  weekendDays = [0, 6]
+}) {
   const [text, setText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [suggestions, setSuggestions] = useState({
@@ -48,29 +56,22 @@ export default function SmartInput({ onAddTask, activeUser, teamMembers = USERS,
     items: [],
     index: 0
   });
+  const [showCustomCalendar, setShowCustomCalendar] = useState(false);
   
   const textareaRef = useRef(null);
   const highlighterRef = useRef(null);
-  const dateInputRef = useRef(null);
 
   const openDatePicker = () => {
-    if (dateInputRef.current) {
-      setSuggestions({ type: null, query: '', items: [], index: 0 });
-      try {
-        dateInputRef.current.showPicker();
-      } catch (err) {
-        dateInputRef.current.click();
-      }
-    }
+    setSuggestions({ type: null, query: '', items: [], index: 0 });
+    setShowCustomCalendar(true);
   };
 
-  const handleDatePickerChange = (e) => {
-    const val = e.target.value;
-    if (!val) return;
-    const [year, month, day] = val.split('-');
-    const formattedDate = `${day}/${month}`;
+  const handleCustomDateSelect = (selectedDate) => {
+    const dMonth = selectedDate.getMonth() + 1;
+    const dDay = selectedDate.getDate();
+    const formattedDate = `${String(dDay).padStart(2, '0')}/${String(dMonth).padStart(2, '0')}`;
     insertSuggestion(formattedDate);
-    e.target.value = '';
+    setShowCustomCalendar(false);
   };
 
   const parsed = parseTaskText(text, teamMembers);
@@ -89,21 +90,24 @@ export default function SmartInput({ onAddTask, activeUser, teamMembers = USERS,
 
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (!suggestions.type) return;
-
       const container = document.querySelector('.smart-input-container');
-      if (container && container.contains(e.target)) {
+      if (container && (container.contains(e.target) || !document.body.contains(e.target))) {
         return;
       }
 
-      setSuggestions({ type: null, query: '', items: [], index: 0 });
+      if (suggestions.type) {
+        setSuggestions({ type: null, query: '', items: [], index: 0 });
+      }
+      if (showCustomCalendar) {
+        setShowCustomCalendar(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [suggestions.type]);
+  }, [suggestions.type, showCustomCalendar]);
 
   const updateSuggestionsList = (val, cursorPos) => {
     const activeToken = getActiveToken(val, cursorPos);
@@ -465,8 +469,8 @@ export default function SmartInput({ onAddTask, activeUser, teamMembers = USERS,
   };
 
   const handleBlur = () => {
-    // If suggestions dropdown is open, keep focus class active to prevent DOM reflows that swallow clicks
-    if (suggestions.type) {
+    // If suggestions dropdown or custom calendar is open, keep focus class active to prevent DOM reflows that swallow clicks
+    if (suggestions.type || showCustomCalendar) {
       return;
     }
     setIsFocused(false);
@@ -586,21 +590,15 @@ export default function SmartInput({ onAddTask, activeUser, teamMembers = USERS,
           </div>
         )}
         
-        {/* Hidden date picker input */}
-        <input
-          ref={dateInputRef}
-          type="date"
-          style={{
-            position: 'absolute',
-            opacity: 0,
-            width: 0,
-            height: 0,
-            pointerEvents: 'none',
-            bottom: 0,
-            left: 0
-          }}
-          onChange={handleDatePickerChange}
-        />
+        {/* Custom Calendar Picker Popover */}
+        {showCustomCalendar && (
+          <CustomCalendar
+            holidays={holidays}
+            weekendDays={weekendDays}
+            onSelectDate={handleCustomDateSelect}
+            onClose={() => setShowCustomCalendar(false)}
+          />
+        )}
       </div>
 
       {/* Real-time Visual Parsing Preview Panel */}

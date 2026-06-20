@@ -4082,6 +4082,8 @@ export default function App() {
                   activeUser={activeUser} 
                   teamMembers={teamMembers}
                   existingTags={Array.from(new Set(tasks.flatMap(t => t.tags || [])))}
+                  holidays={holidays}
+                  weekendDays={weekendDays}
                 />
               </div>
             )}
