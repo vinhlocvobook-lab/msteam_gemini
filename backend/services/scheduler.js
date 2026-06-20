@@ -3,6 +3,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { getValidMicrosoftToken } from '../auth.js';
 import { generateDailyMorningDigest } from './aiService.js';
+import { createInAppNotification } from './notifier.js';
 
 const MICROSOFT_GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 
@@ -188,12 +189,7 @@ async function checkUpcomingDeadlines() {
 
         // Insert notification records for all recipients in Transaction
         for (const userId of recipientIds) {
-          const notifId = `notif-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-          await connection.query(
-            `INSERT INTO notifications (id, user_id, task_id, title, content, type) 
-             VALUES (?, ?, ?, ?, ?, 'reminder')`,
-            [notifId, userId, task.id, notifTitle, notifContent]
-          );
+          await createInAppNotification(userId, task.id, notifTitle, notifContent, 'reminder', connection);
         }
 
         // Update task reminder_sent flag
@@ -298,12 +294,7 @@ async function checkOverdueTasks() {
         const notifContent = `Công việc <strong>"${task.title}"</strong> được giao đã trễ hạn từ lúc <strong>${dueFormatted}</strong>. Vui lòng cập nhật ngay!`;
         
         for (const userId of recipientIds) {
-          const notifId = `notif-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-          await connection.query(
-            `INSERT INTO notifications (id, user_id, task_id, title, content, type) 
-             VALUES (?, ?, ?, ?, ?, 'overdue')`,
-            [notifId, userId, task.id, notifTitle, notifContent]
-          );
+          await createInAppNotification(userId, task.id, notifTitle, notifContent, 'overdue', connection);
         }
 
         // D. Update overdue_logged flag
@@ -428,13 +419,8 @@ export async function sendDailyMorningDigestForUser(userId) {
     if (!delivered) {
       console.log(`[DAILY DIGEST] Could not deliver via Teams DM for ${user.name}. Creating system log/notification fallback.`);
       
-      const notifId = `notif-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
       const notifTitle = `☀️ Bản tin chào buổi sáng Synapse AI`;
-      await connection.query(
-        `INSERT INTO notifications (id, user_id, title, content, type) 
-         VALUES (?, ?, ?, ?, 'reminder')`,
-        [notifId, userId, notifTitle, digestContent, 'reminder']
-      );
+      await createInAppNotification(userId, null, notifTitle, digestContent, 'reminder', connection);
     }
 
     return { success: true, deliveredCount, digestContent };

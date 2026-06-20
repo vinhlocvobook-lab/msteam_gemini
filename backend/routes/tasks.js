@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import { authenticateAppToken, authorizeTask } from '../auth.js';
 import { sendTeamsNotification, sendDirectTeamsMessage } from '../services/scheduler.js';
+import { createInAppNotification } from '../services/notifier.js';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -31,7 +32,7 @@ async function writeTaskActivity(taskId, userId, userName, actionType, fieldChan
   }
 }
 
-// Centralized notification dispatcher for MS Teams smart dynamic routing
+// Centralized notification dispatcher for MS Teams smart dynamic routing and In-App socket push
 async function triggerTeamsNotifications(taskId, activeUser, actionType, payload = {}) {
   try {
     // 1. Fetch task details to get title, creator_id, and assignees
@@ -42,19 +43,25 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
     const senderId = activeUser.id;
     const senderName = activeUser.name;
 
-    // A. HIGH-PRIORITY / PERSONAL EVENTS -> Direct Messages (DMs)
+    // A. HIGH-PRIORITY / PERSONAL EVENTS -> Direct Messages (DMs) & In-App Notifications
     if (['add_assignee', 'permission', 'add_comment'].includes(actionType)) {
       if (actionType === 'add_assignee') {
         const { assigneeIds } = payload;
         if (!assigneeIds || assigneeIds.length === 0) return;
 
-        // Fetch assignees' Microsoft IDs
+        // Fetch assignees
         const [users] = await pool.query('SELECT id, name, microsoft_id FROM users WHERE id IN (?)', [assigneeIds]);
         for (const u of users) {
-          if (u.microsoft_id && u.id !== senderId) {
+          if (u.id !== senderId) {
             const subject = '💼 Công việc mới được giao';
             const content = `Bạn đã được gán vào công việc <strong>"${task.title}"</strong> bởi <strong>${senderName}</strong>.`;
-            await sendDirectTeamsMessage(senderId, u.microsoft_id, subject, content);
+            
+            // Dispatch In-App Notification and socket push
+            await createInAppNotification(u.id, taskId, subject, content, 'assign');
+            
+            if (u.microsoft_id) {
+              await sendDirectTeamsMessage(senderId, u.microsoft_id, subject, content);
+            }
           }
         }
       } 
@@ -63,17 +70,23 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
         if (!recipientId) return;
 
         const [users] = await pool.query('SELECT id, microsoft_id FROM users WHERE id = ?', [recipientId]);
-        if (users.length > 0 && users[0].microsoft_id && recipientId !== senderId) {
+        if (users.length > 0 && recipientId !== senderId) {
           const permText = newPermission === 'edit' ? 'Được sửa' : 'Chỉ xem';
           const subject = '🔐 Cập nhật quyền hạn công việc';
           const content = `Quyền hạn của bạn trên công việc <strong>"${task.title}"</strong> đã được thay đổi thành <strong>${permText}</strong> bởi <strong>${senderName}</strong>.`;
-          await sendDirectTeamsMessage(senderId, users[0].microsoft_id, subject, content);
+          
+          // Dispatch In-App Notification and socket push
+          await createInAppNotification(recipientId, taskId, subject, content, 'permission');
+          
+          if (users[0].microsoft_id) {
+            await sendDirectTeamsMessage(senderId, users[0].microsoft_id, subject, content);
+          }
         }
       } 
       else if (actionType === 'add_comment') {
         const { commentText } = payload;
         
-        // 1. Send DMs to other assignees and the creator (excluding sender) for personal alerts
+        // 1. Send DMs & In-App alerts to other assignees and the creator (excluding sender)
         const [assigneeRows] = await pool.query('SELECT user_id FROM task_assignees WHERE task_id = ?', [taskId]);
         const recipientIds = new Set(assigneeRows.map(a => a.user_id));
         recipientIds.add(task.creator_id);
@@ -82,9 +95,13 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
         if (recipientIds.size > 0) {
           const [users] = await pool.query('SELECT id, microsoft_id FROM users WHERE id IN (?)', [Array.from(recipientIds)]);
           for (const u of users) {
+            const subject = '💬 Bình luận mới trong công việc';
+            const content = `<strong>${senderName}</strong> đã bình luận trong công việc <strong>"${task.title}"</strong> của bạn:<br/><em>"${commentText}"</em>`;
+            
+            // Dispatch In-App Notification and socket push
+            await createInAppNotification(u.id, taskId, subject, content, 'comment');
+            
             if (u.microsoft_id) {
-              const subject = '💬 Bình luận mới trong công việc';
-              const content = `<strong>${senderName}</strong> đã bình luận trong công việc <strong>"${task.title}"</strong> của bạn:<br/><em>"${commentText}"</em>`;
               await sendDirectTeamsMessage(senderId, u.microsoft_id, subject, content);
             }
           }
@@ -103,12 +120,8 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
         }
       }
     } 
-    // B. COLLABORATIVE / PROGRESS EVENTS -> Group Channel/Chat Posts
+    // B. COLLABORATIVE / PROGRESS EVENTS -> Group Channel/Chat Posts & In-App Notifications
     else if (['status', 'priority', 'due_date', 'add_link'].includes(actionType)) {
-      // Fetch all MS Teams links linked to this task
-      const [links] = await pool.query('SELECT * FROM task_teams_links WHERE task_id = ?', [taskId]);
-      if (links.length === 0) return;
-
       let subject = '📢 Cập nhật tiến độ công việc';
       let content = '';
 
@@ -135,11 +148,25 @@ async function triggerTeamsNotifications(taskId, activeUser, actionType, payload
         content = `Công việc <strong>"${task.title}"</strong> đã được gán liên kết Teams mới <strong>[${linkName}]</strong> bởi <strong>${senderName}</strong>.`;
       }
 
-      // Send to all links with 500ms delay between serially dispatched requests
-      const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-      for (const link of links) {
-        await sendTeamsNotification(senderId, link, subject, content);
-        await delay(500);
+      // Send In-App Notifications to creator and assignees (excluding sender)
+      const [assigneeRows] = await pool.query('SELECT user_id FROM task_assignees WHERE task_id = ?', [taskId]);
+      const recipientIds = new Set(assigneeRows.map(a => a.user_id));
+      recipientIds.add(task.creator_id);
+      recipientIds.delete(senderId);
+
+      for (const rId of recipientIds) {
+        await createInAppNotification(rId, taskId, subject, content, actionType);
+      }
+
+      // Fetch all MS Teams links linked to this task
+      const [links] = await pool.query('SELECT * FROM task_teams_links WHERE task_id = ?', [taskId]);
+      if (links.length > 0) {
+        // Send to all links with 500ms delay between serially dispatched requests
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        for (const link of links) {
+          await sendTeamsNotification(senderId, link, subject, content);
+          await delay(500);
+        }
       }
     }
   } catch (err) {

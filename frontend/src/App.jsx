@@ -8,6 +8,7 @@ import GanttChart from './components/GanttChart';
 import { USERS, PRIORITIES, parseTaskText } from './utils/nlpParser';
 import { api, setAccessToken, registerAuthChangeCallback, BACKEND_BASE_URL } from './utils/api';
 import solarLunar from 'solarlunar';
+import { io } from 'socket.io-client';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -94,6 +95,15 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifDropdownRef = useRef(null);
+
+  const [isBrowserNotifEnabled, setIsBrowserNotifEnabled] = useState(() => {
+    const saved = localStorage.getItem('synapse_browser_notif_enabled');
+    return saved !== 'false';
+  });
+  const isBrowserNotifEnabledRef = useRef(isBrowserNotifEnabled);
+  useEffect(() => {
+    isBrowserNotifEnabledRef.current = isBrowserNotifEnabled;
+  }, [isBrowserNotifEnabled]);
 
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
@@ -198,12 +208,22 @@ export default function App() {
     };
   }, []);
 
-  // Polling notifications loop with AbortController memory cleanup
+  // Connect to Socket.io and handle real-time notifications
   useEffect(() => {
     if (isLoggedIn) {
       const controller = new AbortController();
       
-      const fetchNotifications = async (signal) => {
+      // Request native browser desktop notification permissions
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'default') {
+          Notification.requestPermission().then(permission => {
+            console.log('[NOTIFICATION PERMISSION] Status:', permission);
+          });
+        }
+      }
+
+      // Load initial notifications (handles offline notifications sync when going online)
+      const fetchInitialNotifications = async (signal) => {
         try {
           const data = await api.getNotifications({ signal });
           setNotifications(data);
@@ -213,16 +233,57 @@ export default function App() {
           }
         }
       };
+      
+      fetchInitialNotifications(controller.signal);
 
-      fetchNotifications(controller.signal);
+      // Connect to Socket.io
+      const token = sessionStorage.getItem('synapse_access_token');
+      const socket = io(BACKEND_BASE_URL, {
+        auth: { token }
+      });
 
-      const intervalId = setInterval(() => {
-        fetchNotifications(controller.signal);
-      }, 30000);
+      socket.on('connect', () => {
+        console.log('[SOCKET] Connected to real-time notification server');
+      });
+
+      socket.on('notification', (newNotif) => {
+        console.log('[SOCKET] Received new notification:', newNotif);
+        // Append notification to the top of list
+        setNotifications(prev => [newNotif, ...prev]);
+        
+        // Show interactive toast alert
+        showToast(
+          newNotif.title,
+          () => handleNotificationClick(newNotif),
+          'Xem',
+          newNotif.type === 'overdue' ? 'error' : 'info'
+        );
+
+        // Show native system desktop notification if user is in another tab or application
+        if (isBrowserNotifEnabledRef.current && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          if (document.hidden || !document.hasFocus()) {
+            const cleanBody = newNotif.content ? newNotif.content.replace(/<[^>]*>/g, '').trim() : '';
+            const nativeNotif = new Notification(newNotif.title || 'Thông báo mới từ Synapse', {
+              body: cleanBody,
+              tag: newNotif.id
+            });
+
+            nativeNotif.onclick = () => {
+              window.focus();
+              handleNotificationClick(newNotif);
+            };
+          }
+        }
+      });
+
+      socket.on('connect_error', (err) => {
+        console.error('[SOCKET ERROR] Connection failed:', err.message);
+      });
 
       return () => {
-        clearInterval(intervalId);
         controller.abort();
+        socket.disconnect();
+        console.log('[SOCKET] Disconnected socket client');
       };
     } else {
       setNotifications([]);
@@ -668,6 +729,54 @@ export default function App() {
     } catch (err) {
       alert('Không thể xóa thông báo: ' + err.message);
     }
+  };
+
+  const handleToggleBrowserNotif = () => {
+    if (isBrowserNotifEnabled) {
+      setIsBrowserNotifEnabled(false);
+      localStorage.setItem('synapse_browser_notif_enabled', 'false');
+      showToast('Đã tắt thông báo hệ thống trên trình duyệt', null, '', 'info');
+    } else {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            setIsBrowserNotifEnabled(true);
+            localStorage.setItem('synapse_browser_notif_enabled', 'true');
+            showToast('Đã bật thông báo hệ thống thành công!', null, '', 'success');
+          } else {
+            showToast('Trình duyệt chưa được cấp quyền thông báo. Vui lòng cho phép thông báo trong cài đặt.', null, '', 'warning');
+          }
+        });
+      } else {
+        showToast('Trình duyệt của bạn không hỗ trợ thông báo hệ thống.', null, '', 'error');
+      }
+    }
+  };
+
+  const handleTriggerTestNotification = () => {
+    showToast('Đặt lịch thông báo thử nghiệm sau 3 giây. Hãy ẩn trình duyệt hoặc đổi tab ngay!', null, '', 'info');
+    setTimeout(() => {
+      const testNotif = {
+        id: `test-notif-${Date.now()}`,
+        title: '🔔 Thông báo kiểm thử thành công!',
+        content: 'Hệ thống thông báo thời gian thực và đẩy trên trình duyệt của bạn đang hoạt động rất tốt.',
+        type: 'reminder',
+        created_at: new Date()
+      };
+
+      setNotifications(prev => [testNotif, ...prev]);
+
+      if (isBrowserNotifEnabledRef.current && 'Notification' in window && Notification.permission === 'granted') {
+        const nativeNotif = new Notification(testNotif.title, {
+          body: testNotif.content,
+          tag: testNotif.id
+        });
+        nativeNotif.onclick = () => {
+          window.focus();
+          handleNotificationClick(testNotif);
+        };
+      }
+    }, 3000);
   };
 
   // ───────────────────────────────────────────────
@@ -4537,6 +4646,47 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Notifications Settings & Testing Bar */}
+                <div className="notif-settings-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Thông báo trình duyệt:</span>
+                    <button
+                      onClick={handleToggleBrowserNotif}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: isBrowserNotifEnabled ? '#10b981' : '#71717a',
+                        padding: '2px',
+                        transition: 'color 0.2s'
+                      }}
+                      title={isBrowserNotifEnabled ? 'Tắt thông báo hệ thống' : 'Bật thông báo hệ thống'}
+                    >
+                      {isBrowserNotifEnabled ? <ToggleRight size={22} style={{ strokeWidth: 1.5 }} /> : <ToggleLeft size={22} style={{ strokeWidth: 1.5 }} />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleTriggerTestNotification}
+                    style={{
+                      background: 'rgba(139, 92, 246, 0.1)',
+                      border: '1px solid rgba(139, 92, 246, 0.2)',
+                      borderRadius: '4px',
+                      padding: '3px 8px',
+                      fontSize: '10px',
+                      color: '#c084fc',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.2)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)'; }}
+                  >
+                    🚀 Gửi Test (3s)
+                  </button>
+                </div>
+
                 <div className="notif-list">
                   {notifications.length === 0 ? (
                     <div className="notif-empty">
@@ -4568,7 +4718,7 @@ export default function App() {
                               {isOverdue ? '⚠️ Quá hạn công việc' : '⏰ Nhắc nhở hạn chót'}
                             </div>
                             <div className="notif-text">
-                              {notif.message}
+                              {notif.content}
                             </div>
                             <span className="notif-time">{formattedTime}</span>
                           </div>

@@ -2,8 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import { initializeDatabase } from './db.js';
 import { startScheduler } from './services/scheduler.js';
+import { initSocket } from './socket.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -18,6 +20,7 @@ import departmentRoutes from './routes/departments.js';
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Setup CORS
@@ -86,7 +89,10 @@ async function startServer() {
     // Start background scheduler service
     startScheduler();
     
-    app.listen(PORT, () => {
+    // Initialize Socket.io server
+    initSocket(server, allowedOrigins);
+    
+    server.listen(PORT, () => {
       console.log(`[SYSTEM] 🚀 Synapse backend server is running on http://localhost:${PORT}`);
     });
   } catch (err) {
