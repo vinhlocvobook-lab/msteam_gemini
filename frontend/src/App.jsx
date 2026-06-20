@@ -2135,6 +2135,297 @@ export default function App() {
                 </span>
               </div>
 
+              {/* User Filter for Calendar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {/* Switcher */}
+                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', padding: '2px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserFilterMode('pills');
+                      setIsUserDropdownOpen(false);
+                    }}
+                    style={{
+                      padding: '3px 6px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: userFilterMode === 'pills' ? 'var(--primary)' : 'transparent',
+                      color: userFilterMode === 'pills' ? 'white' : 'var(--text-secondary)',
+                      fontSize: '9.5px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px'
+                    }}
+                  >
+                    <User size={10} />
+                    <span>Nhanh</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserFilterMode('dropdown');
+                    }}
+                    style={{
+                      padding: '3px 6px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: userFilterMode === 'dropdown' ? 'var(--primary)' : 'transparent',
+                      color: userFilterMode === 'dropdown' ? 'white' : 'var(--text-secondary)',
+                      fontSize: '9.5px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px'
+                    }}
+                  >
+                    <ChevronDown size={10} />
+                    <span>Chi tiết</span>
+                  </button>
+                </div>
+
+                {/* Filter content */}
+                {userFilterMode === 'pills' ? (
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <div 
+                      className="no-scrollbar"
+                      style={{ 
+                        display: 'flex', 
+                        gap: '4px', 
+                        overflowX: 'auto', 
+                        maxWidth: '160px', 
+                        padding: '2px 0', 
+                        scrollbarWidth: 'none', 
+                        msOverflowStyle: 'none' 
+                      }}
+                    >
+                      {teamMembers.map(member => {
+                        const isActive = selectedAssignees.includes(member.id);
+                        return (
+                          <button
+                            key={member.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAssignees(prev =>
+                                isActive ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                              );
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '1px',
+                              borderRadius: '50%',
+                              position: 'relative',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                            title={`Lọc theo ${member.name}`}
+                          >
+                            <img
+                              src={member.avatar}
+                              alt={member.name}
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '50%',
+                                objectFit: 'cover',
+                                border: isActive ? `2px solid var(--primary)` : '2px solid transparent',
+                                boxShadow: isActive ? '0 0 8px var(--primary-glow)' : 'none',
+                                opacity: isActive ? 1 : 0.6
+                              }}
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserDropdownOpen(!isUserDropdownOpen);
+                        setUserSearchQuery('');
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 8px',
+                        borderRadius: '20px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        color: 'white',
+                        fontSize: '10.5px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <User size={10} style={{ color: '#c084fc' }} />
+                      <span>
+                        {selectedAssignees.length === 0 ? 'Lọc thành viên' : `Đã chọn (${selectedAssignees.length})`}
+                      </span>
+                      <ChevronDown size={10} style={{ opacity: 0.6 }} />
+                    </button>
+
+                    {isUserDropdownOpen && (
+                      <>
+                        <div 
+                          onClick={() => {
+                            setIsUserDropdownOpen(false);
+                            setUserSearchQuery('');
+                          }} 
+                          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} 
+                        />
+                        <div 
+                          className="glass-panel custom-scrollbar"
+                          style={{
+                            position: 'absolute',
+                            top: '28px',
+                            left: 0,
+                            width: '260px',
+                            maxHeight: '300px',
+                            overflowY: 'auto',
+                            zIndex: 999,
+                            padding: '10px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            animation: 'fadeIn 0.15s ease'
+                          }}
+                        >
+                          <input
+                            type="text"
+                            placeholder="Tìm thành viên..."
+                            value={userSearchQuery}
+                            onChange={(e) => setUserSearchQuery(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '5px 8px',
+                              borderRadius: '6px',
+                              background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid rgba(255,255,255,0.08)',
+                              color: '#fff',
+                              fontSize: '10.5px',
+                              outline: 'none',
+                              boxSizing: 'border-box',
+                              marginBottom: '4px'
+                            }}
+                          />
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '2px 4px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '4px' }}>
+                            <span>Thành viên ({filteredTeamMembers.length})</span>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  const visibleIds = filteredTeamMembers.map(m => m.id);
+                                  setSelectedAssignees(prev => {
+                                    const next = [...prev];
+                                    visibleIds.forEach(id => {
+                                      if (!next.includes(id)) next.push(id);
+                                    });
+                                    return next;
+                                  });
+                                }} 
+                                style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: '8.5px', fontWeight: '600', cursor: 'pointer', outline: 'none' }}
+                              >
+                                Chọn hết
+                              </button>
+                              <span style={{ color: 'rgba(255,255,255,0.1)' }}>|</span>
+                              <button 
+                                type="button"
+                                onClick={() => setSelectedAssignees([])} 
+                                style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: '8.5px', fontWeight: '600', cursor: 'pointer', outline: 'none' }}
+                              >
+                                Bỏ chọn
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', maxHeight: '160px' }} className="custom-scrollbar">
+                            {filteredTeamMembers.length === 0 ? (
+                              <div style={{ padding: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10px', fontStyle: 'italic' }}>
+                                Không tìm thấy thành viên.
+                              </div>
+                            ) : (
+                              filteredTeamMembers.map(member => {
+                                const isChecked = selectedAssignees.includes(member.id);
+                                const isOnline = member.status !== 'offline';
+                                const isTyping = member.status === 'typing';
+
+                                return (
+                                  <label 
+                                    key={member.id} 
+                                    style={{ 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      gap: '8px', 
+                                      padding: '4px 6px', 
+                                      borderRadius: '6px', 
+                                      cursor: 'pointer',
+                                      background: isChecked ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                                      transition: 'background 0.2s'
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        setSelectedAssignees(prev =>
+                                          isChecked ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                                        );
+                                      }}
+                                      style={{ accentColor: '#8b5cf6', cursor: 'pointer' }}
+                                    />
+                                    
+                                    <div style={{ position: 'relative', width: '18px', height: '18px', flexShrink: 0 }}>
+                                      <img 
+                                        src={member.avatar} 
+                                        alt={member.name} 
+                                        style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} 
+                                      />
+                                      <span 
+                                        className={`status-indicator ${isTyping ? 'typing' : isOnline ? 'online' : ''}`}
+                                        style={{
+                                          position: 'absolute',
+                                          bottom: '-1px',
+                                          right: '-1px',
+                                          border: '1px solid #121214',
+                                          width: '6px',
+                                          height: '6px'
+                                        }}
+                                      />
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                      <span style={{ fontSize: '10.5px', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {member.name}
+                                      </span>
+                                    </div>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {!isCalendarGridMinimized && (
                 <>
                   <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '10px', padding: '2px' }}>
@@ -2992,6 +3283,10 @@ export default function App() {
       recentOverdueLogs
     } = analyticsData;
 
+    const filteredTeamAnalytics = selectedAssignees.length === 0 
+      ? teamAnalytics 
+      : teamAnalytics.filter(member => selectedAssignees.includes(member.userId));
+
     // SVG Progress ring math
     const radius = 52;
     const circumference = 2 * Math.PI * radius;
@@ -2999,29 +3294,325 @@ export default function App() {
 
     return (
       <div className="analytics-dashboard">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '12px' }}>
           <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.5px', color: '#fff', margin: 0 }}>
             Hiệu Suất & Thống Kê AI
           </h2>
-          <button
-            onClick={handleTriggerDailyDigest}
-            disabled={digestLoading}
-            className="user-switcher-wrap"
-            style={{
-              padding: '8px 16px',
-              cursor: 'pointer',
-              color: '#8b5cf6',
-              borderColor: 'rgba(139, 92, 246, 0.3)',
-              background: 'rgba(139, 92, 246, 0.08)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Sparkles size={13} style={{ color: '#8b5cf6' }} />
-            <span>{digestLoading ? 'Đang tạo...' : '☀️ Gửi bản tin sáng AI (Teams)'}</span>
-          </button>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {/* User Filter for Analytics */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {/* Switcher */}
+              <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', padding: '2px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserFilterMode('pills');
+                    setIsUserDropdownOpen(false);
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: userFilterMode === 'pills' ? 'var(--primary)' : 'transparent',
+                    color: userFilterMode === 'pills' ? 'white' : 'var(--text-secondary)',
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Lọc nhanh bằng danh sách Avatar"
+                >
+                  <User size={11} />
+                  <span>Nhanh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserFilterMode('dropdown');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: userFilterMode === 'dropdown' ? 'var(--primary)' : 'transparent',
+                    color: userFilterMode === 'dropdown' ? 'white' : 'var(--text-secondary)',
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Lọc chi tiết bằng Dropdown checklist"
+                >
+                  <ChevronDown size={11} />
+                  <span>Chi tiết</span>
+                </button>
+              </div>
+
+              {/* Filter content */}
+              {userFilterMode === 'pills' ? (
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <div 
+                    className="no-scrollbar"
+                    style={{ 
+                      display: 'flex', 
+                      gap: '4px', 
+                      overflowX: 'auto', 
+                      maxWidth: '160px', 
+                      padding: '2px 0', 
+                      scrollbarWidth: 'none', 
+                      msOverflowStyle: 'none' 
+                    }}
+                  >
+                    {teamMembers.map(member => {
+                      const isActive = selectedAssignees.includes(member.id);
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAssignees(prev =>
+                              isActive ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                            );
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            borderRadius: '50%',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title={`Lọc theo ${member.name}`}
+                        >
+                          <img
+                            src={member.avatar}
+                            alt={member.name}
+                            style={{
+                              width: '22px',
+                              height: '22px',
+                              borderRadius: '50%',
+                              objectFit: 'cover',
+                              border: isActive ? `2px solid var(--primary)` : '2px solid transparent',
+                              boxShadow: isActive ? '0 0 8px var(--primary-glow)' : 'none',
+                              opacity: isActive ? 1 : 0.6
+                            }}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserDropdownOpen(!isUserDropdownOpen);
+                      setUserSearchQuery('');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '5px 10px',
+                      borderRadius: '20px',
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      color: 'white',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <User size={11} style={{ color: '#c084fc' }} />
+                    <span>
+                      {selectedAssignees.length === 0 ? 'Lọc thành viên' : `Đã chọn (${selectedAssignees.length})`}
+                    </span>
+                    <ChevronDown size={10} style={{ opacity: 0.6 }} />
+                  </button>
+
+                  {isUserDropdownOpen && (
+                    <>
+                      <div 
+                        onClick={() => {
+                          setIsUserDropdownOpen(false);
+                          setUserSearchQuery('');
+                        }} 
+                        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} 
+                      />
+                      <div 
+                        className="glass-panel custom-scrollbar"
+                        style={{
+                          position: 'absolute',
+                          top: '32px',
+                          left: 0,
+                          width: '260px',
+                          maxHeight: '300px',
+                          overflowY: 'auto',
+                          zIndex: 999,
+                          padding: '10px',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          animation: 'fadeIn 0.15s ease'
+                        }}
+                      >
+                        <input
+                          type="text"
+                          placeholder="Tìm thành viên..."
+                          value={userSearchQuery}
+                          onChange={(e) => setUserSearchQuery(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '5px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            color: '#fff',
+                            fontSize: '11.5px',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                            marginBottom: '4px'
+                          }}
+                        />
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '2px 4px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '4px' }}>
+                          <span>Thành viên ({filteredTeamMembers.length})</span>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const visibleIds = filteredTeamMembers.map(m => m.id);
+                                setSelectedAssignees(prev => {
+                                  const next = [...prev];
+                                  visibleIds.forEach(id => {
+                                    if (!next.includes(id)) next.push(id);
+                                  });
+                                  return next;
+                                });
+                              }} 
+                              style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: '8.5px', fontWeight: '600', cursor: 'pointer', outline: 'none' }}
+                            >
+                              Chọn hết
+                            </button>
+                            <span style={{ color: 'rgba(255,255,255,0.1)' }}>|</span>
+                            <button 
+                              type="button"
+                              onClick={() => setSelectedAssignees([])} 
+                              style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: '8.5px', fontWeight: '600', cursor: 'pointer', outline: 'none' }}
+                            >
+                              Bỏ chọn
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', maxHeight: '160px' }} className="custom-scrollbar">
+                          {filteredTeamMembers.length === 0 ? (
+                            <div style={{ padding: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10.5px', fontStyle: 'italic' }}>
+                              Không tìm thấy thành viên.
+                            </div>
+                          ) : (
+                            filteredTeamMembers.map(member => {
+                              const isChecked = selectedAssignees.includes(member.id);
+                              const isOnline = member.status !== 'offline';
+                              const isTyping = member.status === 'typing';
+
+                              return (
+                                <label 
+                                  key={member.id} 
+                                  style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '8px', 
+                                    padding: '4px 6px', 
+                                    borderRadius: '6px', 
+                                    cursor: 'pointer',
+                                    background: isChecked ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                                    transition: 'background 0.2s'
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      setSelectedAssignees(prev =>
+                                        isChecked ? prev.filter(id => id !== member.id) : [...prev, member.id]
+                                      );
+                                    }}
+                                    style={{ accentColor: '#8b5cf6', cursor: 'pointer' }}
+                                  />
+                                  
+                                  <div style={{ position: 'relative', width: '18px', height: '18px', flexShrink: 0 }}>
+                                    <img 
+                                      src={member.avatar} 
+                                      alt={member.name} 
+                                      style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} 
+                                    />
+                                    <span 
+                                      className={`status-indicator ${isTyping ? 'typing' : isOnline ? 'online' : ''}`}
+                                      style={{
+                                        position: 'absolute',
+                                        bottom: '-1px',
+                                        right: '-1px',
+                                        border: '1px solid #121214',
+                                        width: '6px',
+                                        height: '6px'
+                                      }}
+                                    />
+                                  </div>
+
+                                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                    <span style={{ fontSize: '10.5px', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {member.name}
+                                    </span>
+                                  </div>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleTriggerDailyDigest}
+              disabled={digestLoading}
+              className="user-switcher-wrap"
+              style={{
+                padding: '8px 16px',
+                cursor: 'pointer',
+                color: '#8b5cf6',
+                borderColor: 'rgba(139, 92, 246, 0.3)',
+                background: 'rgba(139, 92, 246, 0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Sparkles size={13} style={{ color: '#8b5cf6' }} />
+              <span>{digestLoading ? 'Đang tạo...' : '☀️ Gửi bản tin sáng AI (Teams)'}</span>
+            </button>
+          </div>
         </div>
         {/* KPI Cards Row */}
         <div className="kpi-grid">
@@ -3079,41 +3670,47 @@ export default function App() {
               Tải Công Việc & Tiến Độ Nhóm (Team Workload)
             </h3>
             <div className="team-workload-list">
-              {teamAnalytics.map(member => {
-                const total = member.stats.total || 1;
-                const todoPct = (member.stats.todo / total) * 100;
-                const progressPct = (member.stats.in_progress / total) * 100;
-                const reviewPct = (member.stats.review / total) * 100;
-                const donePct = (member.stats.done / total) * 100;
+              {filteredTeamAnalytics.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', fontStyle: 'italic' }}>
+                  Không có dữ liệu thành viên được chọn.
+                </div>
+              ) : (
+                filteredTeamAnalytics.map(member => {
+                  const total = member.stats.total || 1;
+                  const todoPct = (member.stats.todo / total) * 100;
+                  const progressPct = (member.stats.in_progress / total) * 100;
+                  const reviewPct = (member.stats.review / total) * 100;
+                  const donePct = (member.stats.done / total) * 100;
 
-                return (
-                  <div key={member.userId} className="team-member-row">
-                    <div className="team-member-info">
-                      <img src={member.avatar} alt={member.name} className="team-member-avatar" />
-                      <div>
-                        <div className="team-member-name">{member.name}</div>
-                        <div className="team-member-role">{member.role}</div>
+                  return (
+                    <div key={member.userId} className="team-member-row">
+                      <div className="team-member-info">
+                        <img src={member.avatar} alt={member.name} className="team-member-avatar" />
+                        <div>
+                          <div className="team-member-name">{member.name}</div>
+                          <div className="team-member-role">{member.role}</div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <div className="stacked-bar-container">
+                          {member.stats.todo > 0 && <div className="stacked-bar-segment todo" style={{ width: `${todoPct}%` }} title={`Cần làm: ${member.stats.todo}`} />}
+                          {member.stats.in_progress > 0 && <div className="stacked-bar-segment in_progress" style={{ width: `${progressPct}%` }} title={`Đang làm: ${member.stats.in_progress}`} />}
+                          {member.stats.review > 0 && <div className="stacked-bar-segment review" style={{ width: `${reviewPct}%` }} title={`Review: ${member.stats.review}`} />}
+                          {member.stats.done > 0 && <div className="stacked-bar-segment done" style={{ width: `${donePct}%` }} title={`Hoàn thành: ${member.stats.done}`} />}
+                        </div>
+                      </div>
+
+                      <div className="workload-numbers">
+                        <span className="workload-total">{member.stats.total}</span> việc 
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                          ({member.stats.done} xong)
+                        </span>
                       </div>
                     </div>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                      <div className="stacked-bar-container">
-                        {member.stats.todo > 0 && <div className="stacked-bar-segment todo" style={{ width: `${todoPct}%` }} title={`Cần làm: ${member.stats.todo}`} />}
-                        {member.stats.in_progress > 0 && <div className="stacked-bar-segment in_progress" style={{ width: `${progressPct}%` }} title={`Đang làm: ${member.stats.in_progress}`} />}
-                        {member.stats.review > 0 && <div className="stacked-bar-segment review" style={{ width: `${reviewPct}%` }} title={`Review: ${member.stats.review}`} />}
-                        {member.stats.done > 0 && <div className="stacked-bar-segment done" style={{ width: `${donePct}%` }} title={`Hoàn thành: ${member.stats.done}`} />}
-                      </div>
-                    </div>
-
-                    <div className="workload-numbers">
-                      <span className="workload-total">{member.stats.total}</span> việc 
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                        ({member.stats.done} xong)
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
             
             {/* Chart Legend */}
