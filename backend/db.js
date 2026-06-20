@@ -142,6 +142,7 @@ export async function initializeDatabase() {
         teams_message_id VARCHAR(255),
         last_synced_at DATETIME,
         department_id VARCHAR(255) DEFAULT NULL,
+        dependencies TEXT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -361,6 +362,10 @@ export async function initializeDatabase() {
       await connection.query("ALTER TABLE tasks ADD COLUMN department_id VARCHAR(255) DEFAULT NULL");
       await connection.query("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL");
       console.log("[DATABASE MIGRATION] Added column department_id to tasks");
+    }
+    if (!colNames.includes('dependencies')) {
+      await connection.query("ALTER TABLE tasks ADD COLUMN dependencies TEXT DEFAULT NULL");
+      console.log("[DATABASE MIGRATION] Added column dependencies to tasks");
     }
 
     // 10.3.1 Migration: Add department_id to users if not exists

@@ -516,6 +516,7 @@ router.get('/', authenticateAppToken, async (req, res) => {
         startDate: t.start_date,
         actualStartDate: t.actual_start_date,
         createdAt: t.created_at,
+        dependencies: t.dependencies || '',
         reminderBeforeMinutes: t.reminder_before_minutes,
         creator: creator,
         assignees: taskAssignees,
@@ -562,7 +563,8 @@ router.post('/', authenticateAppToken, async (req, res) => {
     teamsId,
     channelId,
     chatId,
-    teamsLinks = [] // Array of links for 1-to-N
+    teamsLinks = [], // Array of links for 1-to-N
+    dependencies = ''
   } = req.body;
 
   if (!title) {
@@ -623,10 +625,10 @@ router.post('/', authenticateAppToken, async (req, res) => {
     // 1. Insert base task with primary link fields for backward compatibility
     await pool.query(
       `INSERT INTO tasks (id, title, description, status, priority, start_date, actual_start_date, due_date, reminder_before_minutes, creator_id, 
-                          teams_link, channel_link, chat_link, teams_id, channel_id, chat_id, department_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          teams_link, channel_link, chat_link, teams_id, channel_id, chat_id, department_id, dependencies) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [taskId, title, description, status, priority, parsedStartDate, actualStartDate, parsedDueDate, reminderBeforeMinutes !== undefined ? reminderBeforeMinutes : null, resolvedCreator,
-       legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId, req.user.department_id]
+       legacyTeamsLink, legacyChannelLink, legacyChatLink, legacyTeamsId, legacyChannelId, legacyChatId, req.user.department_id, dependencies || null]
     );
 
     // 1.5. Insert teams links into task_teams_links
@@ -817,6 +819,14 @@ router.put('/:id', authenticateAppToken, authorizeTask('edit'), async (req, res)
       const curStartStr = current.start_date ? new Date(current.start_date).toLocaleString('vi-VN') : 'chưa thiết lập';
       if (startStr !== curStartStr) {
         await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'start_date', curStartStr, startStr, `đã đổi ngày bắt đầu thành [${startStr}]`);
+      }
+    }
+
+    if (updates.hasOwnProperty('dependencies')) {
+      fields.push('dependencies = ?');
+      values.push(updates.dependencies);
+      if (updates.dependencies !== current.dependencies) {
+        await writeTaskActivity(taskId, req.user.id, req.user.name, 'update_field', 'dependencies', current.dependencies || 'không có', updates.dependencies || 'không có', 'đã cập nhật mối liên hệ phụ thuộc');
       }
     }
 

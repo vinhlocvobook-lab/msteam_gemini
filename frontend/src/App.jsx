@@ -4,6 +4,7 @@ import SmartInput from './components/SmartInput';
 import KanbanBoard from './components/KanbanBoard';
 import Sidebar from './components/Sidebar';
 import TaskEditorModal from './components/TaskEditorModal';
+import GanttChart from './components/GanttChart';
 import { USERS, PRIORITIES, parseTaskText } from './utils/nlpParser';
 import { api, setAccessToken, registerAuthChangeCallback, BACKEND_BASE_URL } from './utils/api';
 import solarLunar from 'solarlunar';
@@ -3800,6 +3801,26 @@ export default function App() {
           <Calendar size={13} style={{ color: '#06b6d4' }} />
           Lịch Công Việc
         </button>
+        <button
+          onClick={() => setActiveTab('gantt')}
+          style={{
+            padding: '6px 16px',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeTab === 'gantt' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'gantt' ? '#fff' : 'var(--text-secondary)',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <CalendarDays size={13} style={{ color: '#c084fc' }} />
+          Biểu Đồ Gantt
+        </button>
         {activeUser?.role === 'Admin' && (
           <button
             onClick={() => setActiveTab('admin')}
@@ -4045,6 +4066,14 @@ export default function App() {
 
       {activeTab === 'calendar' ? (
         renderCalendarView()
+      ) : activeTab === 'gantt' ? (
+        <GanttChart
+          tasks={tasks}
+          onUpdateTask={handleUpdateTask}
+          onOpenTaskEditor={setSelectedTask}
+          teamMembers={teamMembers}
+          activeUser={activeUser}
+        />
       ) : activeTab === 'analytics' ? (
         renderAnalytics()
       ) : activeTab === 'admin' && activeUser?.role === 'Admin' ? (
@@ -4401,6 +4430,7 @@ export default function App() {
           onSave={handleUpdateTask}
           activeUser={activeUser}
           teamMembers={teamMembers}
+          tasks={tasks}
         />
       )}
 

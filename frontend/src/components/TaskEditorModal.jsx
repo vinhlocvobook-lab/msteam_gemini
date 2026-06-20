@@ -258,7 +258,7 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tìm kiếm
   );
 }
 
-export default function TaskEditorModal({ task, onClose, onSave, activeUser, teamMembers = USERS }) {
+export default function TaskEditorModal({ task, onClose, onSave, activeUser, teamMembers = USERS, tasks = [] }) {
   const hasFullControl = (() => {
     if (!activeUser) return false;
     if (activeUser.role === 'Admin') return true;
@@ -340,6 +340,23 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
   const [tempChannelId, setTempChannelId] = useState('');
   const [tempChatId, setTempChatId] = useState('');
   
+  // Dependencies local state
+  const [dependencies, setDependencies] = useState(task.dependencies || '');
+
+  // Circular dependency check helper
+  const isCircularDependency = (candidateId) => {
+    let currentId = candidateId;
+    const visited = new Set();
+    while (currentId) {
+      if (currentId === task.id) return true;
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+      const parentTask = tasks.find(t => t.id === currentId);
+      currentId = parentTask ? parentTask.dependencies : null;
+    }
+    return false;
+  };
+
   // Tags local state
   const [tags, setTags] = useState(task.tags || []);
   const [tagInput, setTagInput] = useState('');
@@ -581,7 +598,8 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
       reminderBeforeMinutes: reminderBeforeMinutes === -1 ? null : reminderBeforeMinutes,
       tags,
       comments,
-      teamsLinks
+      teamsLinks,
+      dependencies
     });
     onClose();
   };
@@ -1192,6 +1210,30 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 onChange={(e) => setDueDate(e.target.value)}
                 disabled={!canEdit}
               />
+            </div>
+
+            {/* Predecessors / Dependencies */}
+            <div className="modal-field">
+              <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Link size={12} style={{ transform: 'rotate(-45deg)', display: 'inline-block' }} />
+                Công việc tiền nhiệm
+              </label>
+              <select
+                className="modal-select"
+                value={dependencies}
+                onChange={(e) => setDependencies(e.target.value)}
+                disabled={!canEdit}
+              >
+                <option value="">Không có</option>
+                {tasks
+                  .filter(t => t.id !== task.id && !isCircularDependency(t.id))
+                  .map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))
+                }
+              </select>
             </div>
 
             {/* Reminder Config */}
