@@ -187,3 +187,17 @@ app.use(cors({
   - Tạo file `frontend/.env.production` trỏ `VITE_BACKEND_BASE_URL` về domain thật backend.
 - [ ] **Bước 4**: Đóng gói Frontend bằng `npm run build` và deploy thư mục `dist/` lên Web Server (Nginx, Caddy, Vercel, Netlify...).
 - [ ] **Bước 5**: Chạy Backend Production bằng `npm start` hoặc quản lý qua Process Manager (PM2 / Docker / Systemd).
+
+---
+
+## 7. Quản Lý Tính Năng Giao Diện Theo Môi Trường (UI Feature Flags)
+
+Ứng dụng Synapse sử dụng flag môi trường chuẩn của Vite `import.meta.env.DEV` để tự động kiểm soát hiển thị các tính năng dành riêng cho môi trường phát triển (Development):
+
+### Các tính năng ẩn trên Production (chỉ hiển thị ở Dev):
+1. **Nút "Đồng bộ Teams" ([App.jsx:L4743](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/frontend/src/App.jsx#L4743))**:
+   - Được bao bọc bởi `{import.meta.env.DEV && (...)}`.
+   - Giúp tránh việc người dùng bấm nhầm gửi polling request ngắt quãng hoặc spam API Teams trên Production.
+2. **Khu vực Tài khoản thử nghiệm (Mock Accounts Login) ([App.jsx:L4392](file:///Users/vovinhloc/myworking/study/gemini/tasks_management_gemini/frontend/src/App.jsx#L4392))**:
+   - Được bao bọc bởi `{import.meta.env.DEV && (...)}`.
+   - Cho phép các Lập trình viên chọn nhanh 4 tài khoản thử nghiệm khi chạy `npm run dev`, tự động ẩn hoàn toàn trên trang Login Production khi chạy `npm run build`.

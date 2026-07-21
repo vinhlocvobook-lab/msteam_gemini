@@ -183,3 +183,58 @@ Dùng khi bạn mở terminal trên Server (hoặc sau khi `git pull` trên Serv
 ./scripts/deploy_on_server.sh
 ```
 
+........
+Mình đã tạo 2 file script hỗ trợ deploy tự động nằm trong thư mục 
+
+scripts/
+:
+
+1. Script Deploy từ máy Local lên Server (scripts/deploy.sh)
+File: 
+
+scripts/deploy.sh
+
+Các bước script sẽ tự động làm:
+
+Đóng gói Frontend bằng npm run build ở local.
+Dùng rsync đẩy thư mục dist/ lên /var/www/vdt_net_vn/mptech/.
+Tự động sinh/cập nhật file .htaccess cho SPA Routing.
+rsync mã nguồn backend/ lên /var/www/vdt_net_vn/backend/ (bỏ qua node_modules và .env).
+Chạy lệnh trên Server qua SSH để: npm install --production và reload tiến trình PM2 (mptech-backend).
+cách chạy từ máy local của bạn:
+bash
+# Chạy trực tiếp với cấu hình mặc định (root@vdt.net.vn)
+./scripts/deploy.sh
+# Hoặc nếu bạn muốn tùy chỉnh user/domain/thư mục:
+SERVER_USER=root SERVER_HOST=vdt.net.vn ./scripts/deploy.sh
+2. Script Deploy trực tiếp trên Server (scripts/deploy_on_server.sh)
+File: 
+
+scripts/deploy_on_server.sh
+
+Dành cho trường hợp bạn đã SSH vào Server (hoặc sau khi gõ git pull trên Server):
+
+bash
+# Phân quyền & chạy trực tiếp trên Server Linux
+chmod +x scripts/deploy_on_server.sh
+./scripts/deploy_on_server.sh
+🚀 Đồng bộ lên GitHub
+Cả 2 file script deploy đã được cấp quyền thực thi (chmod +x), commit và push lên branch v1.0 trên GitHub repo (origin/v1.0).
+
+14:01
+delete luôn các user test luôn giúp mình
+14:46
+Đã cập nhật cấu hình xóa các tài khoản thử nghiệm và giữ lại tài khoản locvv@minhphu.onmicrosoft.com thành công!
+
+📋 Chi Tiết Thay Đổi:
+Xóa User Thử Nghiệm (backend/reset_db_tasks.js):
+
+Cập nhật logic xóa sạch các user mẫu (loc, lan, huy, binh / đuôi @synapse.com).
+Giữ lại hoàn toàn tài khoản thật locvv@minhphu.onmicrosoft.com.
+Khóa Tự Sinh User Thử Nghiệm Trên Production (backend/db.js):
+
+Khi khởi chạy backend ở chế độ NODE_ENV=production, hệ thống sẽ bỏ qua việc tự sinh 4 user mẫu, đảm bảo database sản xuất không bị nhiễm tài khoản giả lập.
+🚀 Đồng bộ lên GitHub
+Thay đổi đã được commit và push lên branch v1.0 trên GitHub repo (origin/v1.0).
+
+Khi chạy lệnh deploy trên server (./scripts/deploy.sh hoặc ./scripts/deploy_on_server.sh), hệ thống sẽ tự động cập nhật mã nguồn mới này!

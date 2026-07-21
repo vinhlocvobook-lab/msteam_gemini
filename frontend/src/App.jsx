@@ -4388,53 +4388,58 @@ export default function App() {
               Đăng nhập với Microsoft Account
             </button>
 
-            {/* DIVIDER */}
-            <div style={{ display: 'flex', alignItems: 'center', margin: '12px 0', gap: '10px' }}>
-              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }}></div>
-              <span style={{ fontSize: '10px', color: '#71717a', textTransform: 'uppercase', letterSpacing: '1px' }}>Hoặc dùng tài khoản thử nghiệm</span>
-              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }}></div>
-            </div>
+            {/* MOCK ACCOUNTS SECTION (DEV ONLY) */}
+            {import.meta.env.DEV && (
+              <>
+                {/* DIVIDER */}
+                <div style={{ display: 'flex', alignItems: 'center', margin: '12px 0', gap: '10px' }}>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }}></div>
+                  <span style={{ fontSize: '10px', color: '#71717a', textTransform: 'uppercase', letterSpacing: '1px' }}>Hoặc dùng tài khoản thử nghiệm</span>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }}></div>
+                </div>
 
-            {/* MOCK ACCOUNTS GRID */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              {[
-                { id: 'loc', name: 'Lộc Võ', role: 'PO', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80' },
-                { id: 'lan', name: 'Mai Lan', role: 'UX', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=80&h=80&q=80' },
-                { id: 'huy', name: 'Thế Huy', role: 'Frontend', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&h=80&q=80' },
-                { id: 'binh', name: 'Thanh Bình', role: 'Backend', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=80&h=80&q=80' }
-              ].map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => handleMockLogin(u.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.04)',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    textAlign: 'left'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)';
-                  }}
-                >
-                  <img src={u.avatar} alt={u.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                  <div>
-                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#fafafa' }}>{u.name}</div>
-                    <div style={{ fontSize: '9px', color: '#a1a1aa' }}>{u.role}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
+                {/* MOCK ACCOUNTS GRID */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {[
+                    { id: 'loc', name: 'Lộc Võ', role: 'PO', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80' },
+                    { id: 'lan', name: 'Mai Lan', role: 'UX', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=80&h=80&q=80' },
+                    { id: 'huy', name: 'Thế Huy', role: 'Frontend', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&h=80&q=80' },
+                    { id: 'binh', name: 'Thanh Bình', role: 'Backend', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=80&h=80&q=80' }
+                  ].map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => handleMockLogin(u.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.04)',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                        e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.2)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)';
+                      }}
+                    >
+                      <img src={u.avatar} alt={u.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#fafafa' }}>{u.name}</div>
+                        <div style={{ fontSize: '9px', color: '#a1a1aa' }}>{u.role}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
           </div>
 
@@ -4739,25 +4744,27 @@ export default function App() {
             )}
           </div>
 
-          {/* Synchronize Manual Polling Trigger */}
-          <button
-            onClick={handleTriggerPollSync}
-            className="user-switcher-wrap"
-            style={{
-              padding: '8px 12px',
-              cursor: 'pointer',
-              color: '#34d399',
-              borderColor: 'rgba(52, 211, 153, 0.2)',
-              background: 'rgba(52, 211, 153, 0.05)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-            title="Đồng bộ thủ công các tin nhắn Teams bằng Polling DeltaLink"
-          >
-            <RefreshCw size={13} />
-            <span style={{ fontSize: '11px', fontWeight: '600' }}>Đồng bộ Teams</span>
-          </button>
+          {/* Synchronize Manual Polling Trigger (Dev Only) */}
+          {import.meta.env.DEV && (
+            <button
+              onClick={handleTriggerPollSync}
+              className="user-switcher-wrap"
+              style={{
+                padding: '8px 12px',
+                cursor: 'pointer',
+                color: '#34d399',
+                borderColor: 'rgba(52, 211, 153, 0.2)',
+                background: 'rgba(52, 211, 153, 0.05)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title="Đồng bộ thủ công các tin nhắn Teams bằng Polling DeltaLink (Chỉ hiển thị ở chế độ DEV)"
+            >
+              <RefreshCw size={13} />
+              <span style={{ fontSize: '11px', fontWeight: '600' }}>Đồng bộ Teams</span>
+            </button>
+          )}
 
           {/* Simulation Toggle Switch */}
           <div className="sim-switch" title="Mô phỏng hoạt động làm việc của các thành viên khác để xem dòng cộng tác thời gian thực">
