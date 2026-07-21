@@ -601,6 +601,9 @@ router.get('/sync/ms-teams', authenticateAppToken, async (req, res) => {
       accessToken = await getValidMicrosoftToken(req.user.id);
       console.log(`[DEBUG PICKER] Successfully retrieved Microsoft token for user ${req.user.id}`);
     } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(401).json({ error: 'Tài khoản chưa liên kết Microsoft 365.' });
+      }
       console.log(`[DEBUG PICKER] No Microsoft token found or token invalid for user ${req.user.id}: ${err.message}. Returning mock teams.`);
       return res.json([
         { id: 'mock-team-1', displayName: 'Synapse Project Team' },
@@ -679,6 +682,9 @@ router.get('/sync/ms-chats', authenticateAppToken, async (req, res) => {
       accessToken = await getValidMicrosoftToken(req.user.id);
       console.log(`[DEBUG PICKER] Successfully retrieved Microsoft token for user ${req.user.id}`);
     } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(401).json({ error: 'Tài khoản chưa liên kết Microsoft 365.' });
+      }
       console.log(`[DEBUG PICKER] No Microsoft token found or token invalid for user ${req.user.id}: ${err.message}. Returning mock chats.`);
       return res.json([
         { id: 'mock-chat-1', topic: 'Thảo luận PO & UI/UX (Lộc & Lan)', chatType: 'group', webUrl: 'https://teams.microsoft.com/l/chat/mock-chat-1' },

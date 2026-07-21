@@ -491,10 +491,10 @@ export async function initializeDatabase() {
       console.log('[DATABASE] Seeded 4 default users.');
     }
 
-    // 12. Seeding default tasks & logs if empty
+    // 12. Seeding default tasks & logs if empty (Development mode only)
     const [taskRows] = await connection.query('SELECT COUNT(*) as count FROM tasks');
-    if (taskRows[0].count === 0) {
-      console.log('[DATABASE] Seeding initial tasks & logs...');
+    if (taskRows[0].count === 0 && process.env.NODE_ENV !== 'production') {
+      console.log('[DATABASE] Seeding initial tasks & logs for development...');
       const now = new Date();
       
       const defaultTasks = [

@@ -310,6 +310,12 @@ router.post('/logout', async (req, res) => {
 // API: Đăng nhập nhanh bằng tài khoản thử nghiệm (Mock Login)
 // ───────────────────────────────────────────────
 router.post('/mock-login', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ 
+      error: 'Tính năng Đăng nhập Thử nghiệm (Mock Login) đã bị vô hiệu hóa trên môi trường Production.' 
+    });
+  }
+
   const { userId } = req.body;
 
   if (!userId) {
