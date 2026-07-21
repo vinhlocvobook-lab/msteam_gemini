@@ -158,3 +158,28 @@ pm2 save
 3. **Kiểm tra Real-time WebSocket**:
    - Mở Console F12 trình duyệt tại `https://vdt.net.vn/mptech/`.
    - Xác nhận có log: `[SOCKET] Connected to real-time notification server`.
+
+---
+
+## 7. Script Deploy Tự Động (Automated Deployment Script)
+
+Dự án cung cấp 2 script deploy tự động tại thư mục `scripts/`:
+
+### 7.1 Deploy từ máy Local lên Server (`scripts/deploy.sh`)
+Script tự động đóng gói Frontend (`npm run build`), rsync giao diện và mã nguồn Backend lên Server, tự động cập nhật `.htaccess` và reload tiến trình PM2 thông qua SSH:
+
+```bash
+# Chạy trực tiếp từ máy local
+./scripts/deploy.sh
+
+# Hoặc tùy chỉnh IP/User Server:
+SERVER_USER=root SERVER_HOST=vdt.net.vn ./scripts/deploy.sh
+```
+
+### 7.2 Deploy trực tiếp trên Server (`scripts/deploy_on_server.sh`)
+Dùng khi bạn mở terminal trên Server (hoặc sau khi `git pull` trên Server):
+
+```bash
+./scripts/deploy_on_server.sh
+```
+
