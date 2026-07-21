@@ -49,8 +49,10 @@ Thumbs.db
 # Local Environment Secrets & Configurations
 .env
 .env.local
+.env.development
 .env.development.local
 .env.test.local
+.env.production
 .env.production.local
 .env.*.local
 *.env.local
