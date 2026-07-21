@@ -18,6 +18,7 @@ tasks_management_gemini/
 │   ├── DEVELOPMENT_GUIDE.md          # Extension Guide for Teams and AI LLMs
 │   ├── ENVIRONMENT_GUIDE.md          # Environment Management & Dev/Prod Transition Guide
 │   ├── APACHE_SUBPATH_DEPLOYMENT.md  # Apache Subpath Deployment Guide (/mptech & /mptech_task_management)
+│   ├── CORS_TROUBLESHOOTING.md        # CORS Origin Configuration & Troubleshooting Guide
 │   └── user_guide/                   # User Guides
 │       └── create_task.md            # Detailed Task Creation Guide (Vietnamese)
 ├── src/
