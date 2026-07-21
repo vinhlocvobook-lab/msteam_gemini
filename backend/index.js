@@ -23,23 +23,34 @@ const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
-// Setup CORS
-// In local development, the frontend usually runs on port 5173 (Vite).
-// We enable credentials: true to allow transmitting HttpOnly refresh cookies.
-const allowedOrigins = [
+// Setup CORS origins from environment or sensible defaults
+const defaultOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
-  'http://127.0.0.1:5173'
+  'http://127.0.0.1:5173',
+  'https://vdt.net.vn',
+  'https://www.vdt.net.vn'
 ];
+
+const envOrigins = process.env.WEB_ORIGINS
+  ? process.env.WEB_ORIGINS.split(',').map(o => o.trim().replace(/\/+$/, ''))
+  : [];
+
+const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
 
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+    
+    // Extract protocol + host (strip any path or trailing slash if present)
+    const normalizedOrigin = origin.replace(/\/+$/, '');
+
+    if (allowedOrigins.includes(normalizedOrigin) || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
+    console.warn(`[CORS REJECTED] Origin: "${origin}" is not in allowed origins:`, allowedOrigins);
     return callback(new Error('CORS Policy block. Origin not allowed.'));
   },
   credentials: true,
