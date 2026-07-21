@@ -471,10 +471,10 @@ export async function initializeDatabase() {
 
     console.log('[DATABASE] All tables are bootstrapped successfully.');
 
-    // 11. Seeding default users if database is empty
+    // 11. Seeding default users if database is empty (Development mode only)
     const [userRows] = await connection.query('SELECT COUNT(*) as count FROM users');
-    if (userRows[0].count === 0) {
-      console.log('[DATABASE] Seeding initial users...');
+    if (userRows[0].count === 0 && process.env.NODE_ENV !== 'production') {
+      console.log('[DATABASE] Seeding initial users for development...');
       const defaultUsers = [
         ['loc', 'Võ Vĩnh Lộc', 'loc', 'loc@synapse.com', 'Product Owner', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80', '#ec4899'],
         ['lan', 'Nguyễn Mai Lan', 'lan', 'lan@synapse.com', 'UI/UX Designer', 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&h=150&q=80', '#10b981'],

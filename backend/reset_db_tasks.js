@@ -26,6 +26,12 @@ async function resetTasksData() {
     await connection.query('DELETE FROM comments');
     await connection.query('DELETE FROM overdue_logs');
     await connection.query('DELETE FROM notifications');
+    await connection.query('DELETE FROM app_refresh_tokens');
+    await connection.query('DELETE FROM microsoft_tokens');
+
+    console.log('[RESET] Deleting test users (loc, lan, huy, binh / @synapse.com) while keeping locvv@minhphu.onmicrosoft.com...');
+    const [usersResult] = await connection.query("DELETE FROM users WHERE id IN ('loc', 'lan', 'huy', 'binh') OR email LIKE '%@synapse.com'");
+    console.log(`[RESET] Deleted ${usersResult.affectedRows} test users (kept real user locvv@minhphu.onmicrosoft.com).`);
 
     console.log('[RESET] Deleting all system and activity feed logs...');
     const [logsResult] = await connection.query('DELETE FROM logs');
