@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Trash2, ShieldAlert, User, Check, Clock, Edit2, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { Calendar, Trash2, ShieldAlert, User, Check, Clock, Edit2, ChevronLeft, ChevronRight, Plus, MessageSquare, ExternalLink, Link } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 
 const COLUMNS = [
@@ -476,6 +476,79 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
                                 </div>
                               )}
                             </div>
+
+                            {/* Microsoft Teams Badge */}
+                            {((task.teamsLinks && task.teamsLinks.length > 0) || task.teams_link) && (() => {
+                              const linksList = (task.teamsLinks && task.teamsLinks.length > 0)
+                                ? task.teamsLinks
+                                : (task.teams_link ? [{ id: 'legacy', type: 'channel', teamsName: 'Kênh Teams', channelName: 'Microsoft Teams', channelLink: task.teams_link }] : []);
+
+                              return (
+                                <div 
+                                  className="card-badge teams-badge"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePopup(task.id, 'teams', e);
+                                  }}
+                                  style={{
+                                    position: 'relative',
+                                    background: 'rgba(139, 92, 246, 0.12)',
+                                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                                    color: '#c084fc',
+                                    fontWeight: '600',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Xem & mở liên kết Microsoft Teams"
+                                >
+                                  <MessageSquare size={10} style={{ color: '#c084fc' }} />
+                                  <span>Teams {linksList.length > 1 ? `(${linksList.length})` : ''}</span>
+
+                                  {/* Teams Selection Popup */}
+                                  {activePopup && activePopup.taskId === task.id && activePopup.type === 'teams' && (
+                                    <div className="inline-overlay" onClick={e => e.stopPropagation()} style={{ minWidth: '220px', padding: '8px' }}>
+                                      <div style={{ padding: '2px 4px 6px 4px', fontSize: '10px', color: '#a78bfa', fontWeight: 'bold', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '6px' }}>
+                                        LIÊN KẾT MICROSOFT TEAMS
+                                      </div>
+                                      {linksList.map(link => {
+                                        const isChannel = link.type === 'channel';
+                                        const titleText = isChannel 
+                                          ? `${link.teamsName || 'Nhóm'} > ${link.channelName || 'Kênh'}` 
+                                          : (link.chatName || 'Cuộc hội thoại');
+                                        const linkUrl = isChannel ? (link.channelLink || task.teams_link) : (link.chatLink || task.teams_link);
+
+                                        return (
+                                          <div key={link.id || linkUrl} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', marginBottom: '4px' }}>
+                                            <span 
+                                              style={{ fontSize: '11px', color: '#e4e4e7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '130px' }}
+                                              title={titleText}
+                                            >
+                                              {titleText}
+                                            </span>
+                                            {linkUrl ? (
+                                              <a
+                                                href={linkUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '3px 8px', background: '#8b5cf6', color: '#fff', borderRadius: '4px', fontSize: '10px', fontWeight: '600', textDecoration: 'none' }}
+                                                onClick={e => e.stopPropagation()}
+                                              >
+                                                <span>Mở</span>
+                                                <ExternalLink size={9} />
+                                              </a>
+                                            ) : (
+                                              <span style={{ fontSize: '10px', color: '#71717a' }}>Không có URL</span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

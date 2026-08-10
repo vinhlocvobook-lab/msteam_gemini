@@ -613,13 +613,61 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
             <ListTodo size={18} />
             <span style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: 'var(--font-title)' }}>Chi tiết công việc</span>
           </div>
-          <button 
-            onClick={onClose} 
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '4px', borderRadius: '50%' }}
-            title="Đóng"
-          >
-            <X size={18} />
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {((teamsLinks && teamsLinks.length > 0) || task.teams_link) && (() => {
+              const primaryUrl = teamsLinks && teamsLinks.length > 0
+                ? (teamsLinks[0].type === 'channel' ? (teamsLinks[0].channelLink || task.teams_link) : (teamsLinks[0].chatLink || task.teams_link))
+                : task.teams_link;
+              
+              if (!primaryUrl) return null;
+
+              return (
+                <a
+                  href={primaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '5px 12px',
+                    background: 'rgba(139, 92, 246, 0.12)',
+                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    borderRadius: '8px',
+                    color: '#c084fc',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    textDecoration: 'none',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.22)';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.5)';
+                    e.currentTarget.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.3)';
+                    e.currentTarget.style.color = '#c084fc';
+                  }}
+                  title="Mở ứng dụng Microsoft Teams trong tab mới"
+                >
+                  <MessageSquare size={13} />
+                  <span>Mở trên Microsoft Teams</span>
+                  <ExternalLink size={11} />
+                </a>
+              );
+            })()}
+
+            <button 
+              onClick={onClose} 
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '4px', borderRadius: '50%' }}
+              title="Đóng"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Grid Layout */}
