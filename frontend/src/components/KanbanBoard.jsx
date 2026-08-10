@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Trash2, ShieldAlert, User, Check, Clock, Edit2, ChevronLeft, ChevronRight, Plus, MessageSquare, ExternalLink, Link } from 'lucide-react';
+import { Calendar, Trash2, ShieldAlert, User, UserCheck, Check, Clock, Edit2, ChevronLeft, ChevronRight, Plus, MessageSquare, ExternalLink, Link } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 
 const COLUMNS = [
@@ -313,6 +313,43 @@ export default function KanbanBoard({ tasks, onUpdateTask, onDeleteTask, onOpenT
 
                           {/* Card Badges Row */}
                           <div className="card-badges">
+                            {/* Creator Badge (Người giao việc) */}
+                            {(() => {
+                              const creator = task.creator || { 
+                                name: task.creator_name || 'Hệ thống', 
+                                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&q=80',
+                                role: ''
+                              };
+                              const lastName = creator.name ? creator.name.split(' ').pop() : 'N/A';
+
+                              return (
+                                <div 
+                                  className="card-badge creator"
+                                  style={{ 
+                                    position: 'relative', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '4px', 
+                                    padding: '2px 6px',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                                  }}
+                                  title={`Người giao việc: ${creator.name}${creator.role ? ` (${creator.role})` : ''}`}
+                                >
+                                  <UserCheck size={10} style={{ color: '#a78bfa' }} />
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Giao:</span>
+                                  {creator.avatar && (
+                                    <img 
+                                      src={creator.avatar} 
+                                      alt={creator.name} 
+                                      style={{ width: 14, height: 14, borderRadius: '50%', objectFit: 'cover' }} 
+                                    />
+                                  )}
+                                  <span style={{ fontSize: '10px', color: '#e4e4e7', fontWeight: '500' }}>{lastName}</span>
+                                </div>
+                              );
+                            })()}
+
                             {/* Assignee Badge (Overlapping Stack) */}
                             <div 
                               className="card-badge assignee"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Calendar, ShieldAlert, Tag, MessageSquare, ListTodo, Plus, HelpCircle, Link, Unlink, ExternalLink, MessageCircle, ChevronDown, Search, Check, UserPlus, UserMinus, FileText, ArrowRight, Clock } from 'lucide-react';
+import { X, User, UserCheck, Calendar, ShieldAlert, Tag, MessageSquare, ListTodo, Plus, HelpCircle, Link, Unlink, ExternalLink, MessageCircle, ChevronDown, Search, Check, UserPlus, UserMinus, FileText, ArrowRight, Clock } from 'lucide-react';
 import { USERS, PRIORITIES } from '../utils/nlpParser';
 import { api } from '../utils/api';
 
@@ -1033,6 +1033,47 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
                 ))}
               </select>
             </div>
+
+            {/* Creator Field (Người giao việc) */}
+            {(() => {
+              const creator = task.creator || { 
+                name: task.creator_name || activeUser?.name || 'Hệ thống', 
+                avatar: task.creator_avatar || activeUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&q=80',
+                role: task.creator?.role || (task.creator_id === activeUser?.id ? activeUser?.role : 'Thành viên')
+              };
+
+              return (
+                <div className="modal-field">
+                  <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <UserCheck size={12} style={{ color: '#c084fc' }} />
+                    Người giao việc
+                  </label>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    background: 'rgba(139, 92, 246, 0.05)',
+                    border: '1px solid rgba(139, 92, 246, 0.15)',
+                    borderRadius: '8px'
+                  }}>
+                    {creator.avatar && (
+                      <img 
+                        src={creator.avatar} 
+                        alt={creator.name} 
+                        style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover' }} 
+                      />
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#fff' }}>{creator.name}</span>
+                      {creator.role && (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{creator.role}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Assignee Checklist */}
             <div className="modal-field">
