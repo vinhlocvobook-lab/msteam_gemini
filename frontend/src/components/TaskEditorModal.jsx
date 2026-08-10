@@ -675,16 +675,28 @@ export default function TaskEditorModal({ task, onClose, onSave, activeUser, tea
           {/* Main content column (Left) */}
           <div className="modal-main">
             {/* Title */}
-            <div className="modal-field">
-              <input 
-                type="text" 
+              <textarea 
                 className="modal-title-input" 
+                rows={1}
                 value={title} 
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                onFocus={(e) => {
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                ref={(el) => {
+                  if (el) {
+                    el.style.height = 'auto';
+                    el.style.height = el.scrollHeight + 'px';
+                  }
+                }}
                 placeholder="Nhập tiêu đề công việc..."
                 disabled={!canEdit}
               />
-            </div>
 
             {/* Description */}
             <div className="modal-field">
