@@ -503,9 +503,10 @@ export default function App() {
       popup.focus();
 
       const handleAuthMessage = async (event) => {
-        if (event.origin !== window.location.origin) return;
+        const allowedOrigins = [window.location.origin, 'https://vdt.net.vn'];
+        if (!allowedOrigins.includes(event.origin)) return;
 
-        const { type, code, error, errorDescription } = event.data;
+        const { type, code, error, errorDescription } = event.data || {};
 
         if (type === 'MS_AUTH_CODE') {
           window.removeEventListener('message', handleAuthMessage);
@@ -707,6 +708,8 @@ export default function App() {
       } else {
         alert('Công việc này không tồn tại hoặc đã bị xóa.');
       }
+    } else if (notif.content && /<[a-z][\s\S]*>/i.test(notif.content)) {
+      setDigestContentModal(notif.content);
     }
 
     setIsNotificationsOpen(false);
@@ -1065,7 +1068,7 @@ export default function App() {
   useEffect(() => {
     let timeoutId = null;
 
-    if (!isSimulating || !isLoggedIn) {
+    if (!import.meta.env.DEV || !isSimulating || !isLoggedIn) {
       if (simulationIntervalRef.current) {
         clearInterval(simulationIntervalRef.current);
       }
@@ -4720,10 +4723,10 @@ export default function App() {
 
                           <div className="notif-content">
                             <div className="notif-title">
-                              {isOverdue ? '⚠️ Quá hạn công việc' : '⏰ Nhắc nhở hạn chót'}
+                              {notif.title || (isOverdue ? '⚠️ Quá hạn công việc' : '⏰ Nhắc nhở hạn chót')}
                             </div>
                             <div className="notif-text">
-                              {notif.content}
+                              {notif.content ? notif.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : ''}
                             </div>
                             <span className="notif-time">{formattedTime}</span>
                           </div>
@@ -4766,17 +4769,19 @@ export default function App() {
             </button>
           )}
 
-          {/* Simulation Toggle Switch */}
-          <div className="sim-switch" title="Mô phỏng hoạt động làm việc của các thành viên khác để xem dòng cộng tác thời gian thực">
-            <Radio size={14} className={isSimulating ? 'status-indicator typing' : ''} style={{ color: isSimulating ? '#10b981' : '#71717a' }} />
-            <span>Mô phỏng:</span>
-            <button
-              className={`switch-btn ${isSimulating ? 'active' : ''}`}
-              onClick={() => setIsSimulating(!isSimulating)}
-            >
-              <div className="switch-knob" />
-            </button>
-          </div>
+          {/* Simulation Toggle Switch (Dev Only) */}
+          {import.meta.env.DEV && (
+            <div className="sim-switch" title="Mô phỏng hoạt động làm việc của các thành viên khác để xem dòng cộng tác thời gian thực">
+              <Radio size={14} className={isSimulating ? 'status-indicator typing' : ''} style={{ color: isSimulating ? '#10b981' : '#71717a' }} />
+              <span>Mô phỏng:</span>
+              <button
+                className={`switch-btn ${isSimulating ? 'active' : ''}`}
+                onClick={() => setIsSimulating(!isSimulating)}
+              >
+                <div className="switch-knob" />
+              </button>
+            </div>
+          )}
 
           {/* Active Logged User Profile card with Revoke Session Trigger */}
           <div className="user-switcher-wrap" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px' }}>

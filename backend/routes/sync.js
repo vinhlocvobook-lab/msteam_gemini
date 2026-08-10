@@ -536,6 +536,10 @@ router.post('/sync/trigger-daily-digest', authenticateAppToken, async (req, res)
 // 4. SIMULATION ENDPOINT (FOR TESTING)
 // ───────────────────────────────────────────────
 router.post('/simulator/teams-sync', authenticateAppToken, async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Tính năng mô phỏng bị vô hiệu hóa trên môi trường Production.' });
+  }
+
   const { taskId, messageText, senderName = 'Lộc Võ (Mock)' } = req.body;
 
   if (!taskId || !messageText) {

@@ -50,13 +50,18 @@
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     
-    if (code) {
-      // Send the code back to the parent window
-      window.opener.postMessage({ type: 'MS_AUTH_CODE', code, state }, window.location.origin);
-    } else {
-      const error = urlParams.get('error') || 'Không thể lấy authorization code từ Microsoft.';
-      const errorDescription = urlParams.get('error_description') || '';
-      window.opener.postMessage({ type: 'MS_AUTH_ERROR', error, errorDescription }, window.location.origin);
+    // Allow postMessage to reach opener window whether it is running on production domain or local dev (localhost)
+    const targetOrigin = '*';
+
+    if (window.opener) {
+      if (code) {
+        // Send the code back to the parent window
+        window.opener.postMessage({ type: 'MS_AUTH_CODE', code, state }, targetOrigin);
+      } else {
+        const error = urlParams.get('error') || 'Không thể lấy authorization code từ Microsoft.';
+        const errorDescription = urlParams.get('error_description') || '';
+        window.opener.postMessage({ type: 'MS_AUTH_ERROR', error, errorDescription }, targetOrigin);
+      }
     }
     
     // Auto-close popup

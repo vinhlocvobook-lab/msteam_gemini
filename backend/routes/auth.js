@@ -154,7 +154,7 @@ router.post('/login', async (req, res) => {
         tokenVersion: user.token_version
       },
       APP_JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
     // 4. Issue long-lived App Custom Refresh Token
@@ -171,7 +171,8 @@ router.post('/login', async (req, res) => {
     res.cookie('appRefreshToken', rawRefreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
@@ -247,7 +248,7 @@ router.post('/refresh', async (req, res) => {
         tokenVersion: user.token_version
       },
       APP_JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
     // Rotate refresh token (revoke current, create new one) - Sliding Window Session
@@ -266,7 +267,8 @@ router.post('/refresh', async (req, res) => {
     res.cookie('appRefreshToken', newRawRefresh, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
@@ -299,7 +301,8 @@ router.post('/logout', async (req, res) => {
   res.clearCookie('appRefreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    sameSite: 'lax',
+    path: '/'
   });
 
   console.log('[AUTH] User logged out successfully.');
@@ -344,7 +347,7 @@ router.post('/mock-login', async (req, res) => {
         tokenVersion: user.token_version
       },
       APP_JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
     // Issue long-lived App Custom Refresh Token
@@ -361,7 +364,8 @@ router.post('/mock-login', async (req, res) => {
     res.cookie('appRefreshToken', rawRefreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
